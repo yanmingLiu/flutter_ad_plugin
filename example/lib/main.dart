@@ -1,13 +1,17 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_ad_plugin/flutter_ad_plugin.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
 
-import 'ad/ad.dart';
+import 'integration_templates.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await AdService.instance.init();
-  await AdService.instance.preloadStartupAds();
-  await AdService.instance.loadNative(PlacementType.home);
+  await FlutterAdPlugin.init(
+    configRepository: MyConfigRepository(),
+    eventReporter: MyAdEventReporter(),
+  );
+  await FlutterAdPlugin.preload(PlacementType.open);
+  await FlutterAdPlugin.loadNative(PlacementType.home);
   runApp(const FlutterAdPluginApp());
 }
 
@@ -43,20 +47,20 @@ class _AdDemoHomePageState extends State<AdDemoHomePage> {
   @override
   void initState() {
     super.initState();
-    _nativeAd = AdService.instance.getNativeAd(PlacementType.home);
+    _nativeAd = FlutterAdPlugin.getNativeAd(PlacementType.home);
   }
 
   Future<void> _showFullscreen(PlacementType placement) async {
     setState(() => _status = 'Showing ${placement.name}...');
-    final shown = await AdService.instance.show(placement);
+    final shown = await FlutterAdPlugin.show(placement);
     setState(() => _status = shown ? 'Ad closed' : 'No ad was shown');
   }
 
   Future<void> _reloadNative() async {
     setState(() => _status = 'Loading native ad...');
-    await AdService.instance.loadNative(PlacementType.home);
+    await FlutterAdPlugin.loadNative(PlacementType.home);
     setState(() {
-      _nativeAd = AdService.instance.getNativeAd(PlacementType.home);
+      _nativeAd = FlutterAdPlugin.getNativeAd(PlacementType.home);
       _status = _nativeAd == null ? 'Native ad unavailable' : 'Native ad ready';
     });
   }

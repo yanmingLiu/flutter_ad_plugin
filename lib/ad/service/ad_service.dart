@@ -19,17 +19,51 @@ import 'ad_lifecycle_service.dart';
 import 'ad_preload_service.dart';
 
 class AdService {
-  AdService._internal()
-    : _configRepository = DefaultAdConfigRepository(),
-      _reporter = DefaultAdEventReporter(),
-      _sdkInitializer = createDefaultAdSdkInitializer(),
-      _adapterRegistry = AdAdapterRegistry([
-        AdmobOpenAdapter(),
-        AdmobInterstitialAdapter(),
-        AdmobRewardedAdapter(),
-        AdmobNativeAdapter(),
-      ]),
-      _guard = AdDisplayGuard() {
+  AdService._internal();
+
+  static final AdService instance = AdService._internal();
+
+  AdConfigRepository _configRepository = DefaultAdConfigRepository();
+  AdEventReporter _reporter = DefaultAdEventReporter();
+  final AdSdkInitializer _sdkInitializer = createDefaultAdSdkInitializer();
+  final AdAdapterRegistry _adapterRegistry = AdAdapterRegistry([
+    AdmobOpenAdapter(),
+    AdmobInterstitialAdapter(),
+    AdmobRewardedAdapter(),
+    AdmobNativeAdapter(),
+  ]);
+  final AdDisplayGuard _guard = AdDisplayGuard();
+
+  late FullscreenAdController _fullscreenController;
+  late NativeAdController _nativeController;
+  late AdLifecycleService _lifecycleService;
+  late AdPreloadService _preloadService;
+
+  bool _initialized = false;
+
+  Future<void> initWith({
+    required AdConfigRepository configRepository,
+    required AdEventReporter eventReporter,
+  }) async {
+    if (_initialized) return;
+    _configRepository = configRepository;
+    _reporter = eventReporter;
+    _rebuildControllers();
+    await init();
+  }
+
+  Future<void> init() async {
+    if (_initialized) return;
+    _rebuildControllers();
+    log.d('[ad][init] start');
+    await _sdkInitializer.initAll();
+    await _configRepository.getConfig();
+    _lifecycleService.start();
+    _initialized = true;
+    log.d('[ad][init] ready');
+  }
+
+  void _rebuildControllers() {
     _fullscreenController = FullscreenAdController(
       configRepository: _configRepository,
       adapterRegistry: _adapterRegistry,
@@ -42,31 +76,6 @@ class AdService {
     );
     _lifecycleService = AdLifecycleService(this);
     _preloadService = AdPreloadService(this);
-  }
-
-  static final AdService instance = AdService._internal();
-
-  final DefaultAdConfigRepository _configRepository;
-  final DefaultAdEventReporter _reporter;
-  final AdSdkInitializer _sdkInitializer;
-  final AdAdapterRegistry _adapterRegistry;
-  final AdDisplayGuard _guard;
-
-  late final FullscreenAdController _fullscreenController;
-  late final NativeAdController _nativeController;
-  late final AdLifecycleService _lifecycleService;
-  late final AdPreloadService _preloadService;
-
-  bool _initialized = false;
-
-  Future<void> init() async {
-    if (_initialized) return;
-    log.d('[ad][init] start');
-    await _sdkInitializer.initAll();
-    await _configRepository.getConfig();
-    _lifecycleService.start();
-    _initialized = true;
-    log.d('[ad][init] ready');
   }
 
   Future<bool> preload(PlacementType placement) async {
