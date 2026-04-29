@@ -38,7 +38,7 @@ class AdDisplayGuard {
     required AdConfigRepository configRepository,
   }) async {
     final config = await configRepository.getConfig();
-    final policy = PlacementPolicies.of(placement);
+    final policy = PlacementPolicies.of(config: config, placement: placement);
     if (!policy.isFullscreen) {
       return const AdGuardResult.allowed();
     }
@@ -85,16 +85,22 @@ class AdDisplayGuard {
   }
 
   void markShowStarted(PlacementType placement) {
-    if (PlacementPolicies.of(placement).isFullscreen) {
-      _isFullscreenShowing = true;
-    }
+    _isFullscreenShowing = true;
   }
 
   void markShowCompleted(PlacementType placement) {
     final now = DateTime.now();
     _lastShownByPlacement[placement] = now;
 
-    final policy = PlacementPolicies.of(placement);
+    // Guard cooldown behavior is only relevant for fullscreen placements.
+    // Callers only mark completed when fullscreen show succeeded.
+    final policy = const PlacementPolicy(
+      isFullscreen: true,
+      applySamePlacementCd: true,
+      applyDifferentPlacementCd: true,
+      contributesToGlobalCooldown: true,
+      showNotReadyToast: false,
+    );
     if (policy.contributesToGlobalCooldown) {
       _lastGlobalShownAt = now;
       _lastGlobalPlacement = placement;
@@ -103,8 +109,6 @@ class AdDisplayGuard {
   }
 
   void markShowFailed(PlacementType placement) {
-    if (PlacementPolicies.of(placement).isFullscreen) {
-      _isFullscreenShowing = false;
-    }
+    _isFullscreenShowing = false;
   }
 }

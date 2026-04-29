@@ -4,11 +4,15 @@ import '../core/ad_enums.dart';
 class AdConfigParser {
   AdConfig parse(Map<String, dynamic> json) {
     final placements = <PlacementType, List<AdUnitConfig>>{};
+    final placementPolicies = <PlacementType, PlacementPolicyConfig>{};
+    for (final placement in Placements.values) {
+      placements[placement] = const [];
+    }
 
-    for (final placement in PlacementType.values) {
-      final rawList = json[placement.name];
+    for (final entry in json.entries) {
+      final placement = entry.key;
+      final rawList = entry.value;
       if (rawList is! List) {
-        placements[placement] = const [];
         continue;
       }
 
@@ -23,6 +27,23 @@ class AdConfigParser {
       placements[placement] = parsed;
     }
 
+    final rawPolicies = json['placement_policy'];
+    if (rawPolicies is Map) {
+      for (final entry in rawPolicies.entries) {
+        final placement = '${entry.key}';
+        if (entry.value is! Map) continue;
+        final m = Map<String, dynamic>.from(entry.value as Map);
+        placementPolicies[placement] = PlacementPolicyConfig(
+          isFullscreen: m['is_fullscreen'] as bool?,
+          applySamePlacementCd: m['apply_same_placement_cd'] as bool?,
+          applyDifferentPlacementCd: m['apply_different_placement_cd'] as bool?,
+          contributesToGlobalCooldown:
+              m['contributes_to_global_cooldown'] as bool?,
+          showNotReadyToast: m['show_not_ready_toast'] as bool?,
+        );
+      }
+    }
+
     return AdConfig(
       loadTimeoutSeconds: (json['load_timeout'] as num?)?.toInt() ?? 7,
       samePlacementCdSeconds:
@@ -30,6 +51,7 @@ class AdConfigParser {
       differentPlacementCdSeconds:
           (json['different_placement_cd'] as num?)?.toInt() ?? 30,
       placements: placements,
+      placementPolicies: placementPolicies,
     );
   }
 

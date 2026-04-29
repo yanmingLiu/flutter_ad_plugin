@@ -33,18 +33,18 @@ class FullscreenAdController {
     final current = _slots[placement];
     if (current?.isLoading == true) {
       log.d(
-        '[ad][fullscreen][preload] skip_loading placement=${placement.name}',
+        '[ad][fullscreen][preload] skip_loading placement=$placement',
       );
       return false;
     }
     if (current?.hasAd == true) {
       log.d(
-        '[ad][fullscreen][preload] skip_has_cache placement=${placement.name} adid=${current?.adUnitId ?? ''}',
+        '[ad][fullscreen][preload] skip_has_cache placement=$placement adid=${current?.adUnitId ?? ''}',
       );
       return true;
     }
 
-    log.d('[ad][fullscreen][preload] start placement=${placement.name}');
+    log.d('[ad][fullscreen][preload] start placement=$placement');
 
     _slots[placement] = PlacementAdSlot(placement: placement, isLoading: true);
 
@@ -55,14 +55,16 @@ class FullscreenAdController {
         config
             .getUnits(placement)
             .where((unit) => unit.isValid)
-            .where(
-              (unit) => PlacementCapabilities.supports(placement, unit.type),
-            )
+            .where((unit) => PlacementCapabilities.supports(
+                  config: config,
+                  placement: placement,
+                  type: unit.type,
+                ))
             .toList()
           ..sort((a, b) => b.weight.compareTo(a.weight));
 
     log.d(
-      '[ad][fullscreen][preload] candidates placement=${placement.name} count=${units.length}',
+      '[ad][fullscreen][preload] candidates placement=$placement count=${units.length}',
     );
 
     Object? lastError;
@@ -70,16 +72,16 @@ class FullscreenAdController {
       final remain = deadline.difference(DateTime.now());
       if (remain <= Duration.zero) {
         lastError = TimeoutException(
-          '${placement.name} placement preload timeout',
+          '$placement placement preload timeout',
         );
         log.d(
-          '[ad][fullscreen][preload] placement_timeout placement=${placement.name}',
+          '[ad][fullscreen][preload] placement_timeout placement=$placement',
         );
         break;
       }
 
       log.d(
-        '[ad][fullscreen][preload] try placement=${placement.name} type=${unit.type.name} adid=${unit.id} weight=${unit.weight}',
+        '[ad][fullscreen][preload] try placement=$placement type=${unit.type.name} adid=${unit.id} weight=${unit.weight}',
       );
       reporter.report(
         AdEvent(
@@ -123,14 +125,14 @@ class FullscreenAdController {
           ),
         );
         log.d(
-          '[ad][fullscreen][preload] success placement=${placement.name} type=${unit.type.name} adid=${unit.id}',
+          '[ad][fullscreen][preload] success placement=$placement type=${unit.type.name} adid=${unit.id}',
         );
         return true;
       }
 
       lastError = result.error;
       log.d(
-        '[ad][fullscreen][preload] fail placement=${placement.name} type=${unit.type.name} adid=${unit.id} error=$lastError',
+        '[ad][fullscreen][preload] fail placement=$placement type=${unit.type.name} adid=${unit.id} error=$lastError',
       );
       reporter.report(
         AdEvent(
@@ -151,7 +153,7 @@ class FullscreenAdController {
       lastError: lastError,
     );
     log.d(
-      '[ad][fullscreen][preload] exhausted placement=${placement.name} error=$lastError',
+      '[ad][fullscreen][preload] exhausted placement=$placement error=$lastError',
     );
     return false;
   }
@@ -179,16 +181,16 @@ class FullscreenAdController {
         slot?.loadedType == null ||
         slot?.loadedSource == null) {
       log.d(
-        '[ad][fullscreen][show] no_cached_slot placement=${placementLabel ?? placement.name}',
+        '[ad][fullscreen][show] no_cached_slot placement=${placementLabel ?? placement}',
       );
-      return AdShowResult.failure('No cached ad for ${placement.name}');
+      return AdShowResult.failure('No cached ad for $placement');
     }
 
     final currentSlot = slot!;
     final loadedSource = currentSlot.loadedSource!;
     final loadedType = currentSlot.loadedType!;
     log.d(
-      '[ad][fullscreen][show] use_cache placement=${placementLabel ?? placement.name} source=${loadedSource.name} type=${loadedType.name} adid=${currentSlot.adUnitId ?? ''}',
+      '[ad][fullscreen][show] use_cache placement=${placementLabel ?? placement} source=${loadedSource.name} type=${loadedType.name} adid=${currentSlot.adUnitId ?? ''}',
     );
     final adapter = adapterRegistry.get(loadedSource, loadedType);
     final result = await adapter.show(
@@ -198,7 +200,7 @@ class FullscreenAdController {
       reporter: reporter,
       onClosed: () {
         log.d(
-          '[ad][fullscreen][show] on_closed placement=${placementLabel ?? placement.name} source=${loadedSource.name} type=${loadedType.name} adid=${currentSlot.adUnitId ?? ''}',
+          '[ad][fullscreen][show] on_closed placement=${placementLabel ?? placement} source=${loadedSource.name} type=${loadedType.name} adid=${currentSlot.adUnitId ?? ''}',
         );
         clear(placement);
         preload(placement);
@@ -206,13 +208,13 @@ class FullscreenAdController {
     );
     if (!result.shown) {
       log.d(
-        '[ad][fullscreen][show] failed placement=${placementLabel ?? placement.name} source=${loadedSource.name} type=${loadedType.name} error=${result.error}',
+        '[ad][fullscreen][show] failed placement=${placementLabel ?? placement} source=${loadedSource.name} type=${loadedType.name} error=${result.error}',
       );
       clear(placement);
       preload(placement);
     } else {
       log.d(
-        '[ad][fullscreen][show] success placement=${placementLabel ?? placement.name} source=${loadedSource.name} type=${loadedType.name}',
+        '[ad][fullscreen][show] success placement=${placementLabel ?? placement} source=${loadedSource.name} type=${loadedType.name}',
       );
     }
     return result;
@@ -222,7 +224,7 @@ class FullscreenAdController {
     final slot = _slots[placement];
     if (slot != null) {
       log.d(
-        '[ad][fullscreen][clear] placement=${placement.name} source=${slot.loadedSource?.name ?? ''} type=${slot.loadedType?.name ?? ''} adid=${slot.adUnitId ?? ''}',
+        '[ad][fullscreen][clear] placement=$placement source=${slot.loadedSource?.name ?? ''} type=${slot.loadedType?.name ?? ''} adid=${slot.adUnitId ?? ''}',
       );
     }
     if (slot?.ad != null &&

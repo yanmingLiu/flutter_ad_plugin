@@ -28,17 +28,17 @@ class NativeAdController {
   Future<bool> preload(PlacementType placement) async {
     final current = _slots[placement];
     if (current?.isLoading == true) {
-      log.d('[ad][native][preload] skip_loading placement=${placement.name}');
+      log.d('[ad][native][preload] skip_loading placement=$placement');
       return false;
     }
     if (current?.ad != null) {
       log.d(
-        '[ad][native][preload] skip_has_cache placement=${placement.name} adid=${current?.adUnitId ?? ''}',
+        '[ad][native][preload] skip_has_cache placement=$placement adid=${current?.adUnitId ?? ''}',
       );
       return true;
     }
 
-    log.d('[ad][native][preload] start placement=${placement.name}');
+    log.d('[ad][native][preload] start placement=$placement');
     _slots[placement] = PlacementAdSlot(placement: placement, isLoading: true);
     final config = await configRepository.getConfig();
     final timeout = Duration(seconds: config.loadTimeoutSeconds);
@@ -46,19 +46,21 @@ class NativeAdController {
         config
             .getUnits(placement)
             .where((unit) => unit.isValid)
-            .where(
-              (unit) => PlacementCapabilities.supports(placement, unit.type),
-            )
+            .where((unit) => PlacementCapabilities.supports(
+                  config: config,
+                  placement: placement,
+                  type: unit.type,
+                ))
             .toList()
           ..sort((a, b) => b.weight.compareTo(a.weight));
 
     log.d(
-      '[ad][native][preload] candidates placement=${placement.name} count=${units.length}',
+      '[ad][native][preload] candidates placement=$placement count=${units.length}',
     );
 
     for (final unit in units) {
       log.d(
-        '[ad][native][preload] try placement=${placement.name} type=${unit.type.name} adid=${unit.id} weight=${unit.weight}',
+        '[ad][native][preload] try placement=$placement type=${unit.type.name} adid=${unit.id} weight=${unit.weight}',
       );
       reporter.report(
         AdEvent(
@@ -98,17 +100,17 @@ class NativeAdController {
           ),
         );
         log.d(
-          '[ad][native][preload] success placement=${placement.name} type=${unit.type.name} adid=${unit.id}',
+          '[ad][native][preload] success placement=$placement type=${unit.type.name} adid=${unit.id}',
         );
         return true;
       }
       log.d(
-        '[ad][native][preload] fail placement=${placement.name} type=${unit.type.name} adid=${unit.id} error=${result.error}',
+        '[ad][native][preload] fail placement=$placement type=${unit.type.name} adid=${unit.id} error=${result.error}',
       );
     }
 
     _slots[placement] = PlacementAdSlot(placement: placement);
-    log.d('[ad][native][preload] exhausted placement=${placement.name}');
+    log.d('[ad][native][preload] exhausted placement=$placement');
     return false;
   }
 
@@ -123,7 +125,7 @@ class NativeAdController {
     final slot = _slots[placement];
     final ad = slot?.ad as NativeAd?;
     final adUnitId = slot?.adUnitId ?? '';
-    final placementValue = placementLabel ?? placement.name;
+    final placementValue = placementLabel ?? placement;
 
     log.d(
       '[ad][native][show] request placement=$placementValue adid=$adUnitId hasCache=${ad != null}',
@@ -185,7 +187,7 @@ class NativeAdController {
     final slot = _slots.remove(placement);
     if (slot != null) {
       log.d(
-        '[ad][native][clear] placement=${placement.name} source=${slot.loadedSource?.name ?? ''} type=${slot.loadedType?.name ?? ''} adid=${slot.adUnitId ?? ''}',
+        '[ad][native][clear] placement=$placement source=${slot.loadedSource?.name ?? ''} type=${slot.loadedType?.name ?? ''} adid=${slot.adUnitId ?? ''}',
       );
     }
     if (slot?.ad != null &&
@@ -208,10 +210,10 @@ class NativeAdController {
   void _scheduleRefresh(PlacementType placement) {
     _refreshTimers.remove(placement)?.cancel();
     log.d(
-      '[ad][native][refresh] schedule placement=${placement.name} delay=40m',
+      '[ad][native][refresh] schedule placement=$placement delay=40m',
     );
     _refreshTimers[placement] = Timer(const Duration(minutes: 40), () {
-      log.d('[ad][native][refresh] trigger placement=${placement.name}');
+      log.d('[ad][native][refresh] trigger placement=$placement');
       clear(placement);
       preload(placement);
     });

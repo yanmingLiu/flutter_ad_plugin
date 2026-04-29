@@ -10,8 +10,8 @@ Future<void> main() async {
     configRepository: MyConfigRepository(),
     eventReporter: MyAdEventReporter(),
   );
-  await FlutterAdPlugin.preload(PlacementType.open);
-  await FlutterAdPlugin.loadNative(PlacementType.home);
+  await FlutterAdPlugin.preloadByKey('open');
+  await FlutterAdPlugin.loadNativeByKey('home');
   runApp(const FlutterAdPluginApp());
 }
 
@@ -28,7 +28,37 @@ class FlutterAdPluginApp extends StatelessWidget {
         scaffoldBackgroundColor: const Color(0xFFF6F7F4),
         useMaterial3: true,
       ),
-      home: const AdDemoHomePage(),
+      home: const LaunchGatePage(),
+    );
+  }
+}
+
+class LaunchGatePage extends StatefulWidget {
+  const LaunchGatePage({super.key});
+
+  @override
+  State<LaunchGatePage> createState() => _LaunchGatePageState();
+}
+
+class _LaunchGatePageState extends State<LaunchGatePage> {
+  @override
+  void initState() {
+    super.initState();
+    _enterApp();
+  }
+
+  Future<void> _enterApp() async {
+    await FlutterAdPlugin.showByKey('open');
+    if (!mounted) return;
+    Navigator.of(context).pushReplacement(
+      MaterialPageRoute(builder: (_) => const AdDemoHomePage()),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return const Scaffold(
+      body: Center(child: CircularProgressIndicator()),
     );
   }
 }
@@ -47,20 +77,20 @@ class _AdDemoHomePageState extends State<AdDemoHomePage> {
   @override
   void initState() {
     super.initState();
-    _nativeAd = FlutterAdPlugin.getNativeAd(PlacementType.home);
+    _nativeAd = FlutterAdPlugin.getNativeAdByKey('home');
   }
 
   Future<void> _showFullscreen(PlacementType placement) async {
-    setState(() => _status = 'Showing ${placement.name}...');
-    final shown = await FlutterAdPlugin.show(placement);
+    setState(() => _status = 'Showing $placement...');
+    final shown = await FlutterAdPlugin.showByKey(placement);
     setState(() => _status = shown ? 'Ad closed' : 'No ad was shown');
   }
 
   Future<void> _reloadNative() async {
     setState(() => _status = 'Loading native ad...');
-    await FlutterAdPlugin.loadNative(PlacementType.home);
+    await FlutterAdPlugin.loadNativeByKey('home');
     setState(() {
-      _nativeAd = FlutterAdPlugin.getNativeAd(PlacementType.home);
+      _nativeAd = FlutterAdPlugin.getNativeAdByKey('home');
       _status = _nativeAd == null ? 'Native ad unavailable' : 'Native ad ready';
     });
   }
@@ -87,12 +117,12 @@ class _AdDemoHomePageState extends State<AdDemoHomePage> {
               runSpacing: 8,
               children: [
                 FilledButton.icon(
-                  onPressed: () => _showFullscreen(PlacementType.open),
+                  onPressed: () => _showFullscreen(Placements.open),
                   icon: const Icon(Icons.open_in_full),
                   label: const Text('Open'),
                 ),
                 FilledButton.tonalIcon(
-                  onPressed: () => _showFullscreen(PlacementType.message),
+                  onPressed: () => _showFullscreen(Placements.message),
                   icon: const Icon(Icons.chat_bubble_outline),
                   label: const Text('Message'),
                 ),

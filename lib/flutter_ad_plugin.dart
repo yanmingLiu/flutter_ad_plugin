@@ -27,17 +27,32 @@ class FlutterAdPlugin {
   static Future<bool> preload(PlacementType placement) {
     return AdService.instance.preload(placement);
   }
+  static Future<bool> preloadByKey(String placementKey) {
+    return AdService.instance.preload(placementKey);
+  }
 
   static Future<bool> show(PlacementType placement, {String? placementLabel}) {
     return AdService.instance.show(placement, placementLabel: placementLabel);
+  }
+  static Future<bool> showByKey(String placementKey, {String? placementLabel}) {
+    return AdService.instance.show(
+      placementKey,
+      placementLabel: placementLabel,
+    );
   }
 
   static Future<bool> loadNative(PlacementType placement) {
     return AdService.instance.loadNative(placement);
   }
+  static Future<bool> loadNativeByKey(String placementKey) {
+    return AdService.instance.loadNative(placementKey);
+  }
 
   static NativeAd? getNativeAd(PlacementType placement) {
     return AdService.instance.getNativeAd(placement);
+  }
+  static NativeAd? getNativeAdByKey(String placementKey) {
+    return AdService.instance.getNativeAd(placementKey);
   }
 
   static Future<NativeAd?> showNative(

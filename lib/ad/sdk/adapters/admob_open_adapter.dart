@@ -25,7 +25,7 @@ class AdmobOpenAdapter implements AdTypeAdapter<AppOpenAd> {
     required Duration timeout,
   }) async {
     log.d(
-      '[ad][admob_open][load] start placement=${placement.name} adid=${unit.id}',
+      '[ad][admob_open][load] start placement=$placement adid=${unit.id}',
     );
     final completer = Completer<AdLoadResult<AppOpenAd>>();
     AppOpenAd.load(
@@ -34,7 +34,7 @@ class AdmobOpenAdapter implements AdTypeAdapter<AppOpenAd> {
       adLoadCallback: AppOpenAdLoadCallback(
         onAdLoaded: (ad) {
           log.d(
-            '[ad][admob_open][load] loaded placement=${placement.name} adid=${unit.id}',
+            '[ad][admob_open][load] loaded placement=$placement adid=${unit.id}',
           );
           if (!completer.isCompleted) {
             completer.complete(
@@ -44,7 +44,7 @@ class AdmobOpenAdapter implements AdTypeAdapter<AppOpenAd> {
         },
         onAdFailedToLoad: (error) {
           log.d(
-            '[ad][admob_open][load] failed placement=${placement.name} adid=${unit.id} code=${error.code} reason=${error.message}',
+            '[ad][admob_open][load] failed placement=$placement adid=${unit.id} code=${error.code} reason=${error.message}',
           );
           if (!completer.isCompleted) {
             completer.complete(
@@ -58,7 +58,7 @@ class AdmobOpenAdapter implements AdTypeAdapter<AppOpenAd> {
       timeout,
       onTimeout: () {
         log.d(
-          '[ad][admob_open][load] timeout placement=${placement.name} adid=${unit.id}',
+          '[ad][admob_open][load] timeout placement=$placement adid=${unit.id}',
         );
         return AdLoadResult.failure(
           type: type,
@@ -78,13 +78,13 @@ class AdmobOpenAdapter implements AdTypeAdapter<AppOpenAd> {
     VoidCallback? onClosed,
   }) async {
     log.d(
-      '[ad][admob_open][show] start placement=${placementLabel ?? placement.name} adid=${ad.adUnitId}',
+      '[ad][admob_open][show] start placement=${placementLabel ?? placement} adid=${ad.adUnitId}',
     );
     final completer = Completer<AdShowResult>();
     ad.fullScreenContentCallback = FullScreenContentCallback<AppOpenAd>(
       onAdShowedFullScreenContent: (ad) {
         log.d(
-          '[ad][admob_open][show] showed placement=${placementLabel ?? placement.name} adid=${ad.adUnitId}',
+          '[ad][admob_open][show] showed placement=${placementLabel ?? placement} adid=${ad.adUnitId}',
         );
         reporter.report(
           AdEvent(
@@ -103,7 +103,7 @@ class AdmobOpenAdapter implements AdTypeAdapter<AppOpenAd> {
       },
       onAdDismissedFullScreenContent: (ad) {
         log.d(
-          '[ad][admob_open][show] dismissed placement=${placementLabel ?? placement.name} adid=${ad.adUnitId}',
+          '[ad][admob_open][show] dismissed placement=${placementLabel ?? placement} adid=${ad.adUnitId}',
         );
         reporter.report(
           AdEvent(
@@ -120,7 +120,7 @@ class AdmobOpenAdapter implements AdTypeAdapter<AppOpenAd> {
       },
       onAdFailedToShowFullScreenContent: (ad, error) {
         log.d(
-          '[ad][admob_open][show] failed placement=${placementLabel ?? placement.name} adid=${ad.adUnitId} code=${error.code} reason=${error.message}',
+          '[ad][admob_open][show] failed placement=${placementLabel ?? placement} adid=${ad.adUnitId} code=${error.code} reason=${error.message}',
         );
         reporter.report(
           AdEvent(
@@ -143,7 +143,7 @@ class AdmobOpenAdapter implements AdTypeAdapter<AppOpenAd> {
     );
     ad.onPaidEvent = (ad, valueMicros, precision, currencyCode) {
       log.d(
-        '[ad][admob_open][income] placement=${placementLabel ?? placement.name} adid=${ad.adUnitId} value=$valueMicros currency=$currencyCode',
+        '[ad][admob_open][income] placement=${placementLabel ?? placement} adid=${ad.adUnitId} value=$valueMicros currency=$currencyCode',
       );
       reporter.report(
         AdEvent(

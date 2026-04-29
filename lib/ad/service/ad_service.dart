@@ -79,10 +79,10 @@ class AdService {
   }
 
   Future<bool> preload(PlacementType placement) async {
-    log.d('[ad][service][preload] placement=${placement.name}');
+    log.d('[ad][service][preload] placement=$placement');
     final ready = await _fullscreenController.preload(placement);
     log.d(
-      '[ad][service][preload] finish placement=${placement.name} ready=$ready has_cache=${_fullscreenController.hasAvailableAd(placement)}',
+      '[ad][service][preload] finish placement=$placement ready=$ready has_cache=${_fullscreenController.hasAvailableAd(placement)}',
     );
     return ready;
   }
@@ -98,7 +98,7 @@ class AdService {
   }
 
   Future<bool> show(PlacementType placement, {String? placementLabel}) async {
-    final placementValue = placementLabel ?? placement.name;
+    final placementValue = placementLabel ?? placement;
     log.d('[ad][service][show] request placement=$placementValue');
     final guardResult = await _guard.canShow(
       placement: placement,
@@ -107,7 +107,7 @@ class AdService {
     if (!guardResult.allowed) {
       final reason = guardResult.reason?.name ?? 'unknown';
       final retryAfter = guardResult.retryAfterSeconds;
-      final relatedPlacement = guardResult.relatedPlacement?.name;
+      final relatedPlacement = guardResult.relatedPlacement;
       log.d(
         '[ad][service][show] 🚫 blocked_by_guard '
         'placement=$placementValue '
@@ -168,7 +168,11 @@ class AdService {
           timestamp: DateTime.now(),
         ),
       );
-      if (PlacementPolicies.of(placement).showNotReadyToast) {
+      final config = await _configRepository.getConfig();
+      if (PlacementPolicies.of(
+        config: config,
+        placement: placement,
+      ).showNotReadyToast) {
         log.d('[ad][service][show] not_ready_toast placement=$placementValue');
       }
       return false;
@@ -193,7 +197,7 @@ class AdService {
   }
 
   Future<bool> loadNative(PlacementType placement) async {
-    log.d('[ad][service][native_preload] placement=${placement.name}');
+    log.d('[ad][service][native_preload] placement=$placement');
     return _nativeController.preload(placement);
   }
 
@@ -206,7 +210,7 @@ class AdService {
     String? placementLabel,
   }) async {
     log.d(
-      '[ad][service][native_show] request placement=${placementLabel ?? placement.name}',
+      '[ad][service][native_show] request placement=${placementLabel ?? placement}',
     );
     return _nativeController.show(placement, placementLabel: placementLabel);
   }

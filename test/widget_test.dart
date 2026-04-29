@@ -17,9 +17,9 @@ void main() {
     });
 
     expect(config.loadTimeoutSeconds, 3);
-    expect(config.getUnits(PlacementType.open), hasLength(1));
+    expect(config.getUnits(Placements.open), hasLength(1));
     expect(
-      config.getUnits(PlacementType.open).single.type,
+      config.getUnits(Placements.open).single.type,
       AdType.interstitial,
     );
   });

@@ -25,7 +25,7 @@ class AdmobInterstitialAdapter implements AdTypeAdapter<InterstitialAd> {
     required Duration timeout,
   }) async {
     log.d(
-      '[ad][admob_interstitial][load] start placement=${placement.name} adid=${unit.id}',
+      '[ad][admob_interstitial][load] start placement=$placement adid=${unit.id}',
     );
     final completer = Completer<AdLoadResult<InterstitialAd>>();
     InterstitialAd.load(
@@ -34,7 +34,7 @@ class AdmobInterstitialAdapter implements AdTypeAdapter<InterstitialAd> {
       adLoadCallback: InterstitialAdLoadCallback(
         onAdLoaded: (ad) {
           log.d(
-            '[ad][admob_interstitial][load] loaded placement=${placement.name} adid=${unit.id}',
+            '[ad][admob_interstitial][load] loaded placement=$placement adid=${unit.id}',
           );
           if (!completer.isCompleted) {
             completer.complete(
@@ -44,7 +44,7 @@ class AdmobInterstitialAdapter implements AdTypeAdapter<InterstitialAd> {
         },
         onAdFailedToLoad: (error) {
           log.d(
-            '[ad][admob_interstitial][load] failed placement=${placement.name} adid=${unit.id} code=${error.code} reason=${error.message}',
+            '[ad][admob_interstitial][load] failed placement=$placement adid=${unit.id} code=${error.code} reason=${error.message}',
           );
           if (!completer.isCompleted) {
             completer.complete(
@@ -58,7 +58,7 @@ class AdmobInterstitialAdapter implements AdTypeAdapter<InterstitialAd> {
       timeout,
       onTimeout: () {
         log.d(
-          '[ad][admob_interstitial][load] timeout placement=${placement.name} adid=${unit.id}',
+          '[ad][admob_interstitial][load] timeout placement=$placement adid=${unit.id}',
         );
         return AdLoadResult.failure(
           type: type,
@@ -78,13 +78,13 @@ class AdmobInterstitialAdapter implements AdTypeAdapter<InterstitialAd> {
     VoidCallback? onClosed,
   }) async {
     log.d(
-      '[ad][admob_interstitial][show] start placement=${placementLabel ?? placement.name} adid=${ad.adUnitId}',
+      '[ad][admob_interstitial][show] start placement=${placementLabel ?? placement} adid=${ad.adUnitId}',
     );
     final completer = Completer<AdShowResult>();
     ad.fullScreenContentCallback = FullScreenContentCallback<InterstitialAd>(
       onAdShowedFullScreenContent: (ad) {
         log.d(
-          '[ad][admob_interstitial][show] showed placement=${placementLabel ?? placement.name} adid=${ad.adUnitId}',
+          '[ad][admob_interstitial][show] showed placement=${placementLabel ?? placement} adid=${ad.adUnitId}',
         );
         reporter.report(
           AdEvent(
@@ -100,7 +100,7 @@ class AdmobInterstitialAdapter implements AdTypeAdapter<InterstitialAd> {
       },
       onAdDismissedFullScreenContent: (ad) {
         log.d(
-          '[ad][admob_interstitial][show] dismissed placement=${placementLabel ?? placement.name} adid=${ad.adUnitId}',
+          '[ad][admob_interstitial][show] dismissed placement=${placementLabel ?? placement} adid=${ad.adUnitId}',
         );
         reporter.report(
           AdEvent(
@@ -121,7 +121,7 @@ class AdmobInterstitialAdapter implements AdTypeAdapter<InterstitialAd> {
       },
       onAdFailedToShowFullScreenContent: (ad, error) {
         log.d(
-          '[ad][admob_interstitial][show] failed placement=${placementLabel ?? placement.name} adid=${ad.adUnitId} code=${error.code} reason=${error.message}',
+          '[ad][admob_interstitial][show] failed placement=${placementLabel ?? placement} adid=${ad.adUnitId} code=${error.code} reason=${error.message}',
         );
         reporter.report(
           AdEvent(
@@ -144,7 +144,7 @@ class AdmobInterstitialAdapter implements AdTypeAdapter<InterstitialAd> {
     );
     ad.onPaidEvent = (ad, valueMicros, precision, currencyCode) {
       log.d(
-        '[ad][admob_interstitial][income] placement=${placementLabel ?? placement.name} adid=${ad.adUnitId} value=$valueMicros currency=$currencyCode',
+        '[ad][admob_interstitial][income] placement=${placementLabel ?? placement} adid=${ad.adUnitId} value=$valueMicros currency=$currencyCode',
       );
       reporter.report(
         AdEvent(

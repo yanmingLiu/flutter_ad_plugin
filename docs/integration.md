@@ -1,51 +1,114 @@
 # 接入指南
 
-## 初始化
+## 1) 依赖接入
 
-在 App 启动时初始化广告模块：
-
-```dart
-WidgetsFlutterBinding.ensureInitialized();
-await AdService.instance.init();
+```yaml
+dependencies:
+  flutter_ad_plugin:
+    git:
+      url: git@github.com:yanmingLiu/flutter_ad_plugin.git
+      ref: v0.1.0
 ```
 
-推荐在启动页或首页前预加载首批广告：
+## 2) 初始化（注入配置和埋点）
 
 ```dart
-await AdService.instance.preloadStartupAds();
-await AdService.instance.loadNative(PlacementType.home);
+await FlutterAdPlugin.init(
+  configRepository: MyConfigRepository(),
+  eventReporter: MyAdEventReporter(),
+);
 ```
 
-## 展示全屏广告
+### 埋点接入（外部项目）
+
+插件不会绑定具体埋点平台，宿主项目需要实现 `AdEventReporter` 并在初始化时注入。
 
 ```dart
-final shown = await AdService.instance.show(PlacementType.open);
+import 'package:flutter_ad_plugin/ad/analytics/ad_event.dart';
+import 'package:flutter_ad_plugin/ad/analytics/ad_event_reporter.dart';
+
+class MyAdEventReporter implements AdEventReporter {
+  @override
+  Future<void> report(AdEvent event) async {
+    final placement = event.placementLabel ?? event.placement;
+    final params = {
+      'event_type': event.eventType.name,
+      'placement': placement,
+      'ad_type': event.adType.name,
+      'source': event.source.name,
+      'ad_unit_id': event.adUnitId,
+      'error_code': event.errorCode,
+      'error_reason': event.errorReason,
+      'revenue': event.revenue,
+      'currency': event.currency,
+      'ts': event.timestamp.toIso8601String(),
+    };
+
+    // TODO: 映射到你的埋点系统（Firebase / AppsFlyer / Adjust / 自研）
+    // sendToAnalytics(params);
+  }
+}
 ```
 
-返回值语义：
+当前会回调的核心事件类型（`AdEventType`）：
 
-- `true`：广告成功展示，并且关闭回调已经完成。
-- `false`：广告未展示，可能是无缓存、加载失败、频控阻止或广告位无配置。
+- `loadRequested`
+- `loadSucceeded`
+- `loadFailed`
+- `show`
+- `showSuccess`
+- `showFail`
+- `close`
+- `rewardEarned`
+- `income`
+- `blockedByGuard`
 
-## 展示原生广告
+埋点建议：
+
+- 失败事件（`loadFailed/showFail`）务必上报 `error_code`、`error_reason`
+- 收益事件（`income`）务必上报 `revenue`、`currency`、`ad_unit_id`
+- 业务广告位建议优先使用 `placementLabel`，未传时回退 `placement`
+
+## 3) 开屏/全屏广告
 
 ```dart
-await AdService.instance.loadNative(PlacementType.home);
-final ad = AdService.instance.getNativeAd(PlacementType.home);
+await FlutterAdPlugin.preloadByKey('open');
+final shown = await FlutterAdPlugin.showByKey('open');
+```
 
+## 4) 原生广告
+
+```dart
+await FlutterAdPlugin.loadNativeByKey('home');
+final ad = FlutterAdPlugin.getNativeAdByKey('home');
 if (ad != null) {
   NativeAdView(ad: ad, height: 280);
 }
 ```
 
-原生广告对象由模块负责缓存和释放，业务层不要自行 `dispose`。
+## 5) 只传 JSON 的实现方式
 
-## 新增广告位
+`MyConfigRepository` 内部直接解析 JSON：
 
-新增广告位至少需要同步修改：
+```dart
+class MyConfigRepository implements AdConfigRepository {
+  @override
+  Future<AdConfig> getConfig() async {
+    final json = ...; // remote/local json map
+    return AdConfigParser().parse(json);
+  }
+}
+```
 
-1. `lib/ad/core/ad_enums.dart` 增加 `PlacementType`
-2. `lib/ad/core/placement_capabilities.dart` 配置允许的 `AdType`
-3. `lib/ad/core/placement_policy.dart` 配置频控和全屏策略
-4. `lib/ad/config/ad_config_repository.dart` 或远程配置增加对应广告源
-5. 在业务触发点调用 `preload`、`show` 或 `loadNative`
+你只需要维护 JSON 即可决定：
+
+- 广告位（placement key）
+- 候选广告类型与权重
+- 冷却策略和提示策略（`placement_policy`）
+
+## 6) 新增广告位
+
+当前版本已支持纯字符串广告位：  
+新增 placement key 只需要在 JSON 中新增对应节点，不需要再改插件源码映射表。
+
+可选：内置常量 `Placements.*` 仅用于常见 key 便捷引用，不是必须。

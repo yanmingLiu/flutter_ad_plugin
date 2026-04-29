@@ -24,19 +24,30 @@ await FlutterAdPlugin.init(
   eventReporter: DefaultAdEventReporter(),
 );
 
-await FlutterAdPlugin.preload(PlacementType.open);
-final shown = await FlutterAdPlugin.show(PlacementType.open);
+await FlutterAdPlugin.preloadByKey('open');
+final shown = await FlutterAdPlugin.showByKey('open');
 ```
+
+## Documentation
+
+- [接入指南](/docs/integration.md)
+  - 含：初始化、埋点接入（`AdEventReporter`）、全屏/原生广告调用
+- [广告配置（JSON 驱动）](/docs/ad_config.md)
+- [架构说明](/docs/architecture.md)
+- [时序图](/docs/sequence.md)
+- [变更记录](/CHANGELOG.md)
 
 ## Native ad
 
 ```dart
-await FlutterAdPlugin.loadNative(PlacementType.home);
-final ad = FlutterAdPlugin.getNativeAd(PlacementType.home);
+await FlutterAdPlugin.loadNativeByKey('home');
+final ad = FlutterAdPlugin.getNativeAdByKey('home');
 if (ad != null) {
   return NativeAdView(ad: ad, height: 280);
 }
 ```
+
+可选：如果你不想手写字符串，也可以使用内置常量 `Placements.open/home/...`。
 
 ## Integration points
 

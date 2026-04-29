@@ -25,7 +25,7 @@ class AdmobRewardedAdapter implements AdTypeAdapter<RewardedAd> {
     required Duration timeout,
   }) async {
     log.d(
-      '[ad][admob_rewarded][load] start placement=${placement.name} adid=${unit.id}',
+      '[ad][admob_rewarded][load] start placement=$placement adid=${unit.id}',
     );
     final completer = Completer<AdLoadResult<RewardedAd>>();
     RewardedAd.load(
@@ -34,7 +34,7 @@ class AdmobRewardedAdapter implements AdTypeAdapter<RewardedAd> {
       rewardedAdLoadCallback: RewardedAdLoadCallback(
         onAdLoaded: (ad) {
           log.d(
-            '[ad][admob_rewarded][load] loaded placement=${placement.name} adid=${unit.id}',
+            '[ad][admob_rewarded][load] loaded placement=$placement adid=${unit.id}',
           );
           if (!completer.isCompleted) {
             completer.complete(
@@ -44,7 +44,7 @@ class AdmobRewardedAdapter implements AdTypeAdapter<RewardedAd> {
         },
         onAdFailedToLoad: (error) {
           log.d(
-            '[ad][admob_rewarded][load] failed placement=${placement.name} adid=${unit.id} code=${error.code} reason=${error.message}',
+            '[ad][admob_rewarded][load] failed placement=$placement adid=${unit.id} code=${error.code} reason=${error.message}',
           );
           if (!completer.isCompleted) {
             completer.complete(
@@ -58,7 +58,7 @@ class AdmobRewardedAdapter implements AdTypeAdapter<RewardedAd> {
       timeout,
       onTimeout: () {
         log.d(
-          '[ad][admob_rewarded][load] timeout placement=${placement.name} adid=${unit.id}',
+          '[ad][admob_rewarded][load] timeout placement=$placement adid=${unit.id}',
         );
         return AdLoadResult.failure(
           type: type,
@@ -78,14 +78,14 @@ class AdmobRewardedAdapter implements AdTypeAdapter<RewardedAd> {
     VoidCallback? onClosed,
   }) async {
     log.d(
-      '[ad][admob_rewarded][show] start placement=${placementLabel ?? placement.name} adid=${ad.adUnitId}',
+      '[ad][admob_rewarded][show] start placement=${placementLabel ?? placement} adid=${ad.adUnitId}',
     );
     final completer = Completer<AdShowResult>();
     var rewardEarned = false;
     ad.fullScreenContentCallback = FullScreenContentCallback<RewardedAd>(
       onAdShowedFullScreenContent: (ad) {
         log.d(
-          '[ad][admob_rewarded][show] showed placement=${placementLabel ?? placement.name} adid=${ad.adUnitId}',
+          '[ad][admob_rewarded][show] showed placement=${placementLabel ?? placement} adid=${ad.adUnitId}',
         );
         reporter.report(
           AdEvent(
@@ -101,7 +101,7 @@ class AdmobRewardedAdapter implements AdTypeAdapter<RewardedAd> {
       },
       onAdDismissedFullScreenContent: (ad) {
         log.d(
-          '[ad][admob_rewarded][show] dismissed placement=${placementLabel ?? placement.name} adid=${ad.adUnitId} rewardEarned=$rewardEarned',
+          '[ad][admob_rewarded][show] dismissed placement=${placementLabel ?? placement} adid=${ad.adUnitId} rewardEarned=$rewardEarned',
         );
         reporter.report(
           AdEvent(
@@ -122,7 +122,7 @@ class AdmobRewardedAdapter implements AdTypeAdapter<RewardedAd> {
       },
       onAdFailedToShowFullScreenContent: (ad, error) {
         log.d(
-          '[ad][admob_rewarded][show] failed placement=${placementLabel ?? placement.name} adid=${ad.adUnitId} code=${error.code} reason=${error.message}',
+          '[ad][admob_rewarded][show] failed placement=${placementLabel ?? placement} adid=${ad.adUnitId} code=${error.code} reason=${error.message}',
         );
         reporter.report(
           AdEvent(
@@ -145,7 +145,7 @@ class AdmobRewardedAdapter implements AdTypeAdapter<RewardedAd> {
     );
     ad.onPaidEvent = (ad, valueMicros, precision, currencyCode) {
       log.d(
-        '[ad][admob_rewarded][income] placement=${placementLabel ?? placement.name} adid=${ad.adUnitId} value=$valueMicros currency=$currencyCode',
+        '[ad][admob_rewarded][income] placement=${placementLabel ?? placement} adid=${ad.adUnitId} value=$valueMicros currency=$currencyCode',
       );
       reporter.report(
         AdEvent(
@@ -176,7 +176,7 @@ class AdmobRewardedAdapter implements AdTypeAdapter<RewardedAd> {
       onUserEarnedReward: (ad, reward) {
         rewardEarned = true;
         log.d(
-          '[ad][admob_rewarded][reward] placement=${placementLabel ?? placement.name} adid=${ad.adUnitId} amount=${reward.amount} type=${reward.type}',
+          '[ad][admob_rewarded][reward] placement=${placementLabel ?? placement} adid=${ad.adUnitId} amount=${reward.amount} type=${reward.type}',
         );
         reporter.report(
           AdEvent(

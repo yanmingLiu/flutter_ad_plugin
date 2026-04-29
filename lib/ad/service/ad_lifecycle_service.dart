@@ -29,7 +29,7 @@ class AdLifecycleService {
     try {
       SvrLogEvent().logSessionEvent();
 
-      await _adService.show(PlacementType.open);
+      await _adService.show(Placements.open);
     } catch (e) {
       log.e('[ad] lifecycle foreground show failed: $e');
     } finally {

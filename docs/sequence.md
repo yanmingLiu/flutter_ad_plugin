@@ -1,48 +1,42 @@
-# 广告时序
+# 时序图
 
-## 启动预加载
+## 初始化与配置解析
 
 ```mermaid
 sequenceDiagram
   participant App
+  participant Plugin as FlutterAdPlugin
   participant Service as AdService
   participant Repo as AdConfigRepository
-  participant Controller as FullscreenAdController
-  participant Registry as AdAdapterRegistry
-  participant Adapter as AdMob Adapter
+  participant Parser as AdConfigParser
 
-  App->>Service: init()
+  App->>Plugin: init(configRepository, eventReporter)
+  Plugin->>Service: initWith(...)
   Service->>Repo: getConfig()
-  App->>Service: preloadStartupAds()
-  Service->>Controller: preload(open)
-  Controller->>Repo: getConfig()
-  Controller->>Registry: find(admob, type)
-  Registry-->>Controller: adapter
-  Controller->>Adapter: load(unit)
-  Adapter-->>Controller: AdLoadResult
+  Repo->>Parser: parse(json)
+  Parser-->>Repo: AdConfig
+  Repo-->>Service: AdConfig
 ```
 
-## 全屏展示
+## 全屏广告展示
 
 ```mermaid
 sequenceDiagram
   participant App
   participant Service as AdService
   participant Guard as AdDisplayGuard
-  participant Controller as FullscreenAdController
+  participant Full as FullscreenAdController
   participant Adapter as AdMob Adapter
   participant Reporter as AdEventReporter
 
   App->>Service: show(placement)
-  Service->>Guard: canShow(placement)
-  Guard-->>Service: allowed
-  Service->>Controller: show(placement)
-  Controller->>Reporter: ad_show
-  Controller->>Adapter: show(ad)
-  Adapter-->>Reporter: ad_show_succ / ad_show_fail
-  Adapter-->>Controller: closed
-  Controller-->>Service: AdShowResult
-  Service->>Guard: markShowCompleted()
+  Service->>Guard: canShow(placement, config)
+  Guard-->>Service: allowed/blocked
+  Service->>Full: show(placement)
+  Full->>Reporter: ad_show
+  Full->>Adapter: show(ad)
+  Adapter-->>Reporter: ad_show_succ/ad_show_fail
+  Full-->>Service: AdShowResult
   Service-->>App: bool
 ```
 
@@ -54,14 +48,14 @@ sequenceDiagram
   participant Service as AdService
   participant Native as NativeAdController
   participant Adapter as AdmobNativeAdapter
-  participant Android as HomeNativeAdFactory
+  participant Factory as NativeAdFactory(iOS/Android)
 
-  App->>Service: loadNative(home)
-  Service->>Native: preload(home)
-  Native->>Adapter: load(native unit)
-  Adapter->>Android: factoryId homeListTile
-  Android-->>Adapter: NativeAdView
+  App->>Service: loadNative(placement)
+  Service->>Native: preload(placement)
+  Native->>Adapter: load(unit)
+  Adapter->>Factory: factoryId=homeListTile
+  Factory-->>Adapter: NativeAdView
   Adapter-->>Native: NativeAd
-  App->>Service: getNativeAd(home)
+  App->>Service: getNativeAd(placement)
   Service-->>App: NativeAd?
 ```

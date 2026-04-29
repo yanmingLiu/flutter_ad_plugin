@@ -10,7 +10,7 @@ abstract class AdEventReporter {
 class DefaultAdEventReporter implements AdEventReporter {
   @override
   Future<void> report(AdEvent event) async {
-    final placementValue = event.placementLabel ?? event.placement.name;
+    final placementValue = event.placementLabel ?? event.placement;
     log.d(
       '[ad] 👉 ${event.eventType.name} placement=$placementValue '
       'type=${event.adType.name} unit=${event.adUnitId}',

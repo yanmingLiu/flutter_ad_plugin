@@ -24,6 +24,50 @@ class DefaultAdConfigRepository implements AdConfigRepository {
     'load_timeout': 7,
     'same_placement_cd': 30,
     'different_placement_cd': 30,
+    'placement_policy': {
+      'open': {
+        'is_fullscreen': true,
+        'apply_same_placement_cd': true,
+        'apply_different_placement_cd': true,
+        'contributes_to_global_cooldown': true,
+        'show_not_ready_toast': false,
+      },
+      'home': {
+        'is_fullscreen': false,
+        'apply_same_placement_cd': false,
+        'apply_different_placement_cd': false,
+        'contributes_to_global_cooldown': false,
+        'show_not_ready_toast': false,
+      },
+      'message': {
+        'is_fullscreen': true,
+        'apply_same_placement_cd': false,
+        'apply_different_placement_cd': false,
+        'contributes_to_global_cooldown': false,
+        'show_not_ready_toast': true,
+      },
+      'chatBack': {
+        'is_fullscreen': true,
+        'apply_same_placement_cd': true,
+        'apply_different_placement_cd': true,
+        'contributes_to_global_cooldown': true,
+        'show_not_ready_toast': false,
+      },
+      'chatSession': {
+        'is_fullscreen': true,
+        'apply_same_placement_cd': true,
+        'apply_different_placement_cd': true,
+        'contributes_to_global_cooldown': true,
+        'show_not_ready_toast': false,
+      },
+      'liveVideo': {
+        'is_fullscreen': true,
+        'apply_same_placement_cd': false,
+        'apply_different_placement_cd': false,
+        'contributes_to_global_cooldown': false,
+        'show_not_ready_toast': true,
+      },
+    },
     'open': [
       {
         'source': 'admob',
