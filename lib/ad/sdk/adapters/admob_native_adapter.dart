@@ -26,17 +26,20 @@ class AdmobNativeAdapter implements AdTypeAdapter<NativeAd> {
     required Duration timeout,
   }) async {
     log.d(
-      '[ad][admob_native][load] start placement=${placement.name} adid=${unit.id}',
+      '[ad][admob_native][load] start placement=$placement adid=${unit.id}',
     );
     final completer = Completer<AdLoadResult<NativeAd>>();
     final ad = NativeAd(
       adUnitId: unit.id,
       factoryId: _factoryId,
+      nativeTemplateStyle: NativeTemplateStyle(
+        templateType: TemplateType.medium,
+      ),
       request: const AdRequest(),
       listener: NativeAdListener(
         onAdLoaded: (ad) {
           log.d(
-            '[ad][admob_native][load] loaded placement=${placement.name} adid=${unit.id}',
+            '[ad][admob_native][load] loaded placement=$placement adid=${unit.id}',
           );
           if (!completer.isCompleted) {
             completer.complete(
@@ -50,7 +53,7 @@ class AdmobNativeAdapter implements AdTypeAdapter<NativeAd> {
         },
         onAdFailedToLoad: (ad, error) {
           log.d(
-            '[ad][admob_native][load] failed placement=${placement.name} adid=${unit.id} code=${error.code} reason=${error.message}',
+            '[ad][admob_native][load] failed placement=$placement adid=${unit.id} code=${error.code} reason=${error.message}',
           );
           ad.dispose();
           if (!completer.isCompleted) {
@@ -66,7 +69,7 @@ class AdmobNativeAdapter implements AdTypeAdapter<NativeAd> {
       timeout,
       onTimeout: () {
         log.d(
-          '[ad][admob_native][load] timeout placement=${placement.name} adid=${unit.id}',
+          '[ad][admob_native][load] timeout placement=$placement adid=${unit.id}',
         );
         ad.dispose();
         return AdLoadResult.failure(
