@@ -50,7 +50,6 @@ class FullscreenAdController {
 
     final config = await configRepository.getConfig();
     final timeout = Duration(seconds: config.loadTimeoutSeconds);
-    final deadline = DateTime.now().add(timeout);
     final units =
         config
             .getUnits(placement)
@@ -69,17 +68,6 @@ class FullscreenAdController {
 
     Object? lastError;
     for (final unit in units) {
-      final remain = deadline.difference(DateTime.now());
-      if (remain <= Duration.zero) {
-        lastError = TimeoutException(
-          '$placement placement preload timeout',
-        );
-        log.d(
-          '[ad][fullscreen][preload] placement_timeout placement=$placement',
-        );
-        break;
-      }
-
       log.d(
         '[ad][fullscreen][preload] try placement=$placement type=${unit.type.name} adid=${unit.id} weight=${unit.weight}',
       );
@@ -159,6 +147,7 @@ class FullscreenAdController {
     String? placementLabel,
   }) async {
     final slot = _slots[placement];
+
     if (slot?.ad == null ||
         slot?.loadedType == null ||
         slot?.loadedSource == null) {

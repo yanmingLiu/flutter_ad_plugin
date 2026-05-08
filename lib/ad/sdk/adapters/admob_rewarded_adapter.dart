@@ -142,6 +142,22 @@ class AdmobRewardedAdapter implements AdTypeAdapter<RewardedAd> {
           completer.complete(AdShowResult.failure(error));
         }
       },
+      onAdClicked: (ad) {
+        log.d(
+          '[ad][admob_rewarded][show] clicked placement=${placementLabel ?? placement} adid=${ad.adUnitId}',
+        );
+        reporter.report(
+          AdEvent(
+            eventType: AdEventType.clicked,
+            placement: placement,
+            placementLabel: placementLabel,
+            adType: type,
+            source: AdSource.admob,
+            adUnitId: ad.adUnitId,
+            timestamp: DateTime.now(),
+          ),
+        );
+      },
     );
     ad.onPaidEvent = (ad, valueMicros, precision, currencyCode) {
       log.d(

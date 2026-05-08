@@ -144,14 +144,20 @@ class AdService {
       log.d(
         '[ad][service][show] 🚫 no_cache_after_preload placement=$placementValue',
       );
+      final slot = _fullscreenController.getSlot(placement);
+      final fallbackType = placement == Placements.open ? AdType.open : AdType.interstitial;
+      final adType = slot?.loadedType ?? fallbackType;
+      final source = slot?.loadedSource ?? AdSource.admob;
+      final adUnitId = slot?.adUnitId ?? '';
+
       _reporter.report(
         AdEvent(
           eventType: AdEventType.show,
           placement: placement,
           placementLabel: placementLabel,
-          adType: AdType.interstitial,
-          source: AdSource.admob,
-          adUnitId: '',
+          adType: adType,
+          source: source,
+          adUnitId: adUnitId,
           timestamp: DateTime.now(),
         ),
       );
@@ -160,9 +166,9 @@ class AdService {
           eventType: AdEventType.showFail,
           placement: placement,
           placementLabel: placementLabel,
-          adType: AdType.interstitial,
-          source: AdSource.admob,
-          adUnitId: '',
+          adType: adType,
+          source: source,
+          adUnitId: adUnitId,
           errorCode: -1,
           errorReason: 'no cache',
           timestamp: DateTime.now(),
