@@ -95,14 +95,10 @@ class FullscreenAdController {
       );
 
       final adapter = adapterRegistry.get(unit.source, unit.type);
-      final attemptTimeout = _attemptTimeout(
-        remaining: remain,
-        totalUnits: units.length,
-      );
       final result = await adapter.load(
         placement: placement,
         unit: unit,
-        timeout: attemptTimeout,
+        timeout: timeout,
       );
 
       if (result.isSuccess) {
@@ -156,20 +152,6 @@ class FullscreenAdController {
       '[ad][fullscreen][preload] exhausted placement=$placement error=$lastError',
     );
     return false;
-  }
-
-  Duration _attemptTimeout({
-    required Duration remaining,
-    required int totalUnits,
-  }) {
-    if (totalUnits <= 1) {
-      return remaining;
-    }
-    const maxAttemptTimeout = Duration(seconds: 3);
-    if (remaining <= maxAttemptTimeout) {
-      return remaining;
-    }
-    return maxAttemptTimeout;
   }
 
   Future<AdShowResult> show(

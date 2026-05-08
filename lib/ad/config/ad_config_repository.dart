@@ -171,6 +171,8 @@ class DefaultAdConfigRepository implements AdConfigRepository {
   Future<AdConfig> _loadConfig() async {
     log.d('[ad][config] load_start');
     final remoteJson = _remoteConfigJson;
+    log.d('[ad][config] source=remote remoteJson=$remoteJson');
+
     if (remoteJson != null && remoteJson.trim().isNotEmpty) {
       try {
         final decoded = jsonDecode(remoteJson);
