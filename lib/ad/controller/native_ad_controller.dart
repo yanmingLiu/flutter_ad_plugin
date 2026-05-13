@@ -25,20 +25,42 @@ class NativeAdController {
   final Map<PlacementType, PlacementAdSlot> _slots = {};
   final Map<PlacementType, Timer> _refreshTimers = {};
 
+  void handleLateAd({
+    required PlacementType placement,
+    required Ad ad,
+    required AdType type,
+    required String adUnitId,
+  }) {
+    final current = _slots[placement];
+    if (current?.hasAd == true) {
+      log.d('📥 [late_load] discard: native:${placement.name}');
+      ad.dispose();
+      return;
+    }
+
+    log.d('📥 [late_load] accept: native:${placement.name} ($adUnitId)');
+    _slots[placement] = PlacementAdSlot(
+      placement: placement,
+      ad: ad,
+      loadedSource: AdSource.admob,
+      loadedType: type,
+      adUnitId: adUnitId,
+      loadedAt: DateTime.now(),
+    );
+  }
+
   Future<bool> preload(PlacementType placement) async {
     final current = _slots[placement];
     if (current?.isLoading == true) {
-      log.d('[ad][native][preload] skip_loading placement=$placement');
+      log.d('📥 [preload] skip: native:${placement.name} (loading)');
       return false;
     }
     if (current?.ad != null) {
-      log.d(
-        '[ad][native][preload] skip_has_cache placement=$placement adid=${current?.adUnitId ?? ''}',
-      );
+      log.d('📥 [preload] skip: native:${placement.name} (has cache)');
       return true;
     }
 
-    log.d('[ad][native][preload] start placement=$placement');
+    log.d('📥 [preload] start: native:${placement.name}');
     _slots[placement] = PlacementAdSlot(placement: placement, isLoading: true);
     final config = await configRepository.getConfig();
     final timeout = Duration(seconds: config.loadTimeoutSeconds);
@@ -46,22 +68,16 @@ class NativeAdController {
         config
             .getUnits(placement)
             .where((unit) => unit.isValid)
-            .where((unit) => PlacementCapabilities.supports(
-                  config: config,
-                  placement: placement,
-                  type: unit.type,
-                ))
+            .where(
+              (unit) => PlacementCapabilities.supports(placement, unit.type),
+            )
             .toList()
           ..sort((a, b) => b.weight.compareTo(a.weight));
 
-    log.d(
-      '[ad][native][preload] candidates placement=$placement count=${units.length}',
-    );
+    log.d('📥 [preload] units=${units.length}: native:${placement.name}');
 
     for (final unit in units) {
-      log.d(
-        '[ad][native][preload] try placement=$placement type=${unit.type.name} adid=${unit.id} weight=${unit.weight}',
-      );
+      log.d('📥 [preload] try: native:${placement.name} id=${unit.id}');
       reporter.report(
         AdEvent(
           eventType: AdEventType.loadRequested,
@@ -78,6 +94,15 @@ class NativeAdController {
         placement: placement,
         unit: unit,
         timeout: timeout,
+        reporter: reporter,
+        onLateAdLoaded: (ad, type, adUnitId) {
+          handleLateAd(
+            placement: placement,
+            ad: ad,
+            type: type,
+            adUnitId: adUnitId,
+          );
+        },
       );
       if (result.isSuccess) {
         _slots[placement] = PlacementAdSlot(
@@ -99,18 +124,14 @@ class NativeAdController {
             timestamp: DateTime.now(),
           ),
         );
-        log.d(
-          '[ad][native][preload] success placement=$placement type=${unit.type.name} adid=${unit.id}',
-        );
+        log.d('✅ [preload] success: native:${placement.name}');
         return true;
       }
-      log.d(
-        '[ad][native][preload] fail placement=$placement type=${unit.type.name} adid=${unit.id} error=${result.error}',
-      );
+      log.d('❌ [preload] fail: native:${placement.name} id=${unit.id}');
     }
 
     _slots[placement] = PlacementAdSlot(placement: placement);
-    log.d('[ad][native][preload] exhausted placement=$placement');
+    log.d('❌ [preload] exhausted: native:${placement.name}');
     return false;
   }
 
@@ -125,11 +146,9 @@ class NativeAdController {
     final slot = _slots[placement];
     final ad = slot?.ad as NativeAd?;
     final adUnitId = slot?.adUnitId ?? '';
-    final placementValue = placementLabel ?? placement;
+    final placementValue = placementLabel ?? placement.name;
 
-    log.d(
-      '[ad][native][show] request placement=$placementValue adid=$adUnitId hasCache=${ad != null}',
-    );
+    log.d('🚀 [show] request: native:$placementValue (cache=${ad != null})');
 
     reporter.report(
       AdEvent(
@@ -144,7 +163,7 @@ class NativeAdController {
     );
 
     if (ad == null) {
-      log.d('[ad][native][show] fail_no_cache placement=$placementValue');
+      log.d('❌ [show] fail: native:$placementValue (no cache)');
       reporter.report(
         AdEvent(
           eventType: AdEventType.showFail,
@@ -173,9 +192,7 @@ class NativeAdController {
       ),
     );
 
-    log.d(
-      '[ad][native][show] success placement=$placementValue adid=$adUnitId',
-    );
+    log.d('✅ [show] success: native:$placementValue');
 
     return ad;
   }
@@ -186,9 +203,7 @@ class NativeAdController {
     _refreshTimers.remove(placement)?.cancel();
     final slot = _slots.remove(placement);
     if (slot != null) {
-      log.d(
-        '[ad][native][clear] placement=$placement source=${slot.loadedSource?.name ?? ''} type=${slot.loadedType?.name ?? ''} adid=${slot.adUnitId ?? ''}',
-      );
+      log.d('🗑️ [clear] native:${placement.name}');
     }
     if (slot?.ad != null &&
         slot?.loadedType != null &&
@@ -209,11 +224,9 @@ class NativeAdController {
 
   void _scheduleRefresh(PlacementType placement) {
     _refreshTimers.remove(placement)?.cancel();
-    log.d(
-      '[ad][native][refresh] schedule placement=$placement delay=40m',
-    );
+    log.d('⏳ [refresh] schedule: native:${placement.name} (40m)');
     _refreshTimers[placement] = Timer(const Duration(minutes: 40), () {
-      log.d('[ad][native][refresh] trigger placement=$placement');
+      log.d('⏳ [refresh] trigger: native:${placement.name}');
       clear(placement);
       preload(placement);
     });

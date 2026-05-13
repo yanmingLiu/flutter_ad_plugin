@@ -10,8 +10,10 @@ Future<void> main() async {
     configRepository: MyConfigRepository(),
     eventReporter: MyAdEventReporter(),
   );
-  await FlutterAdPlugin.preloadByKey('open');
-  await FlutterAdPlugin.loadNativeByKey('home');
+  // 预加载开屏广告和首页原生广告
+  await FlutterAdPlugin.preload(PlacementType.open);
+  await FlutterAdPlugin.loadNative(PlacementType.home);
+  
   runApp(const FlutterAdPluginApp());
 }
 
@@ -48,7 +50,9 @@ class _LaunchGatePageState extends State<LaunchGatePage> {
   }
 
   Future<void> _enterApp() async {
-    await FlutterAdPlugin.showByKey('open');
+    // 展示开屏广告
+    await FlutterAdPlugin.show(PlacementType.open);
+    
     if (!mounted) return;
     Navigator.of(context).pushReplacement(
       MaterialPageRoute(builder: (_) => const AdDemoHomePage()),
@@ -77,20 +81,21 @@ class _AdDemoHomePageState extends State<AdDemoHomePage> {
   @override
   void initState() {
     super.initState();
-    _nativeAd = FlutterAdPlugin.getNativeAdByKey('home');
+    // 获取已加载的原生广告
+    _nativeAd = FlutterAdPlugin.getNativeAd(PlacementType.home);
   }
 
   Future<void> _showFullscreen(PlacementType placement) async {
-    setState(() => _status = 'Showing $placement...');
-    final shown = await FlutterAdPlugin.showByKey(placement);
+    setState(() => _status = 'Showing ${placement.name}...');
+    final shown = await FlutterAdPlugin.show(placement);
     setState(() => _status = shown ? 'Ad closed' : 'No ad was shown');
   }
 
   Future<void> _reloadNative() async {
     setState(() => _status = 'Loading native ad...');
-    await FlutterAdPlugin.loadNativeByKey('home');
+    await FlutterAdPlugin.loadNative(PlacementType.home);
     setState(() {
-      _nativeAd = FlutterAdPlugin.getNativeAdByKey('home');
+      _nativeAd = FlutterAdPlugin.getNativeAd(PlacementType.home);
       _status = _nativeAd == null ? 'Native ad unavailable' : 'Native ad ready';
     });
   }
@@ -100,15 +105,15 @@ class _AdDemoHomePageState extends State<AdDemoHomePage> {
     final textTheme = Theme.of(context).textTheme;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Flutter Ad Plugin')),
+      appBar: AppBar(title: const Text('Flutter Ad Plugin Demo')),
       body: SafeArea(
         child: ListView(
           padding: const EdgeInsets.all(16),
           children: [
-            Text('Ad module extraction', style: textTheme.headlineSmall),
+            Text('Ad Module Integration', style: textTheme.headlineSmall),
             const SizedBox(height: 8),
             Text(
-              'This demo uses Google Mobile Ads test units and the extracted Flutter ad orchestration layer.',
+              'This demo showcases the extracted ad orchestration layer using Google Mobile Ads test units.',
               style: textTheme.bodyMedium,
             ),
             const SizedBox(height: 16),
@@ -117,24 +122,24 @@ class _AdDemoHomePageState extends State<AdDemoHomePage> {
               runSpacing: 8,
               children: [
                 FilledButton.icon(
-                  onPressed: () => _showFullscreen(Placements.open),
+                  onPressed: () => _showFullscreen(PlacementType.open),
                   icon: const Icon(Icons.open_in_full),
-                  label: const Text('Open'),
+                  label: const Text('Open Ad'),
                 ),
                 FilledButton.tonalIcon(
-                  onPressed: () => _showFullscreen(Placements.message),
+                  onPressed: () => _showFullscreen(PlacementType.message),
                   icon: const Icon(Icons.chat_bubble_outline),
-                  label: const Text('Message'),
+                  label: const Text('Interstitial'),
                 ),
                 OutlinedButton.icon(
                   onPressed: _reloadNative,
                   icon: const Icon(Icons.refresh),
-                  label: const Text('Native'),
+                  label: const Text('Reload Native'),
                 ),
               ],
             ),
             const SizedBox(height: 12),
-            Text(_status, style: textTheme.labelLarge),
+            Text('Status: $_status', style: textTheme.labelLarge),
             const SizedBox(height: 16),
             if (_nativeAd == null)
               const _EmptyNativeAd()

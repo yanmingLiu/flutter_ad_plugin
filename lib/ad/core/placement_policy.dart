@@ -1,5 +1,4 @@
 import 'ad_enums.dart';
-import 'ad_config.dart';
 
 class PlacementPolicy {
   final bool isFullscreen;
@@ -18,23 +17,50 @@ class PlacementPolicy {
 }
 
 class PlacementPolicies {
-  static PlacementPolicy of({
-    required AdConfig config,
-    required PlacementType placement,
-  }) {
-    final custom = config.getPolicy(placement);
-    final units = config.getUnits(placement);
-    final hasNative = units.any((u) => u.type == AdType.native);
-    final isFullscreenByType = !hasNative;
+  static const Map<PlacementType, PlacementPolicy> values = {
+    PlacementType.open: PlacementPolicy(
+      isFullscreen: true,
+      applySamePlacementCd: true,
+      applyDifferentPlacementCd: true,
+      contributesToGlobalCooldown: true,
+      showNotReadyToast: false,
+    ),
+    PlacementType.home: PlacementPolicy(
+      isFullscreen: false,
+      applySamePlacementCd: false,
+      applyDifferentPlacementCd: false,
+      contributesToGlobalCooldown: false,
+      showNotReadyToast: false,
+    ),
+    PlacementType.message: PlacementPolicy(
+      isFullscreen: true,
+      applySamePlacementCd: false,
+      applyDifferentPlacementCd: false,
+      contributesToGlobalCooldown: false,
+      showNotReadyToast: true,
+    ),
+    PlacementType.chatBack: PlacementPolicy(
+      isFullscreen: true,
+      applySamePlacementCd: true,
+      applyDifferentPlacementCd: true,
+      contributesToGlobalCooldown: true,
+      showNotReadyToast: false,
+    ),
+    PlacementType.chatSession: PlacementPolicy(
+      isFullscreen: true,
+      applySamePlacementCd: true,
+      applyDifferentPlacementCd: true,
+      contributesToGlobalCooldown: true,
+      showNotReadyToast: false,
+    ),
+    PlacementType.liveVideo: PlacementPolicy(
+      isFullscreen: true,
+      applySamePlacementCd: false,
+      applyDifferentPlacementCd: false,
+      contributesToGlobalCooldown: false,
+      showNotReadyToast: true,
+    ),
+  };
 
-    return PlacementPolicy(
-      isFullscreen: custom?.isFullscreen ?? isFullscreenByType,
-      applySamePlacementCd: custom?.applySamePlacementCd ?? isFullscreenByType,
-      applyDifferentPlacementCd:
-          custom?.applyDifferentPlacementCd ?? isFullscreenByType,
-      contributesToGlobalCooldown:
-          custom?.contributesToGlobalCooldown ?? isFullscreenByType,
-      showNotReadyToast: custom?.showNotReadyToast ?? isFullscreenByType,
-    );
-  }
+  static PlacementPolicy of(PlacementType placement) => values[placement]!;
 }

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 
 import '../analytics/ad_event.dart';
 import '../analytics/ad_event_reporter.dart';
@@ -22,6 +23,31 @@ class FullscreenAdController {
   final AdEventReporter reporter;
 
   final Map<PlacementType, PlacementAdSlot> _slots = {};
+  final Map<PlacementType, Future<bool>> _loadingFutures = {};
+
+  void handleLateAd({
+    required PlacementType placement,
+    required Ad ad,
+    required AdType type,
+    required String adUnitId,
+  }) {
+    final current = _slots[placement];
+    if (current?.hasAd == true) {
+      log.d('📥 [late_load] discard: ${placement.name} (already has cache)');
+      ad.dispose();
+      return;
+    }
+
+    log.d('📥 [late_load] accept: ${placement.name} ($adUnitId)');
+    _slots[placement] = PlacementAdSlot(
+      placement: placement,
+      ad: ad,
+      loadedSource: AdSource.admob,
+      loadedType: type,
+      adUnitId: adUnitId,
+      loadedAt: DateTime.now(),
+    );
+  }
 
   PlacementAdSlot? getSlot(PlacementType placement) => _slots[placement];
 
@@ -30,77 +56,58 @@ class FullscreenAdController {
   }
 
   Future<bool> preload(PlacementType placement) async {
-    final current = _slots[placement];
-    if (current?.isLoading == true) {
-      log.d(
-        '[ad][fullscreen][preload] skip_loading placement=$placement',
-      );
-      return false;
+    if (_loadingFutures.containsKey(placement)) {
+      log.d('📥 [preload] wait: ${placement.name}');
+      return await _loadingFutures[placement]!;
     }
+
+    final current = _slots[placement];
     if (current?.hasAd == true) {
-      log.d(
-        '[ad][fullscreen][preload] skip_has_cache placement=$placement adid=${current?.adUnitId ?? ''}',
-      );
+      log.d('📥 [preload] skip: ${placement.name} (has cache)');
       return true;
     }
 
-    log.d('[ad][fullscreen][preload] start placement=$placement');
+    log.d('📥 [preload] start: ${placement.name}');
+    final loadFuture = _performLoad(placement);
+    _loadingFutures[placement] = loadFuture;
 
+    try {
+      return await loadFuture;
+    } finally {
+      _loadingFutures.remove(placement);
+    }
+  }
+
+  Future<bool> _performLoad(PlacementType placement) async {
     _slots[placement] = PlacementAdSlot(placement: placement, isLoading: true);
 
-    final config = await configRepository.getConfig();
-    final timeout = Duration(seconds: config.loadTimeoutSeconds);
-    final units =
-        config
-            .getUnits(placement)
-            .where((unit) => unit.isValid)
-            .where((unit) => PlacementCapabilities.supports(
-                  config: config,
-                  placement: placement,
-                  type: unit.type,
-                ))
-            .toList()
-          ..sort((a, b) => b.weight.compareTo(a.weight));
+    try {
+      final config = await configRepository.getConfig();
+      final timeout = Duration(seconds: config.loadTimeoutSeconds);
+      final units =
+          config
+              .getUnits(placement)
+              .where((unit) => unit.isValid)
+              .where(
+                (unit) => PlacementCapabilities.supports(placement, unit.type),
+              )
+              .toList()
+            ..sort((a, b) => b.weight.compareTo(a.weight));
 
-    log.d(
-      '[ad][fullscreen][preload] candidates placement=$placement count=${units.length}',
-    );
+      if (units.isEmpty) {
+        log.d('📥 [preload] empty: ${placement.name}');
+        _slots[placement] = PlacementAdSlot(placement: placement);
+        return false;
+      }
 
-    Object? lastError;
-    for (final unit in units) {
-      log.d(
-        '[ad][fullscreen][preload] try placement=$placement type=${unit.type.name} adid=${unit.id} weight=${unit.weight}',
-      );
-      reporter.report(
-        AdEvent(
-          eventType: AdEventType.loadRequested,
-          placement: placement,
-          adType: unit.type,
-          source: unit.source,
-          adUnitId: unit.id,
-          timestamp: DateTime.now(),
-        ),
-      );
+      log.d('📥 [preload] units=${units.length}: ${placement.name}');
 
-      final adapter = adapterRegistry.get(unit.source, unit.type);
-      final result = await adapter.load(
-        placement: placement,
-        unit: unit,
-        timeout: timeout,
-      );
-
-      if (result.isSuccess) {
-        _slots[placement] = PlacementAdSlot(
-          placement: placement,
-          ad: result.ad,
-          loadedSource: unit.source,
-          loadedType: unit.type,
-          adUnitId: unit.id,
-          loadedAt: DateTime.now(),
-        );
+      Object? lastError;
+      for (final unit in units) {
+        log.d('📥 [preload] try: ${placement.name} type=${unit.type.name} id=${unit.id}');
         reporter.report(
           AdEvent(
-            eventType: AdEventType.loadSucceeded,
+            eventType: AdEventType.loadRequested,
             placement: placement,
             adType: unit.type,
             source: unit.source,
@@ -108,125 +115,126 @@ class FullscreenAdController {
             timestamp: DateTime.now(),
           ),
         );
-        log.d(
-          '[ad][fullscreen][preload] success placement=$placement type=${unit.type.name} adid=${unit.id}',
+
+        final adapter = adapterRegistry.get(unit.source, unit.type);
+        final result = await adapter.load(
+          placement: placement,
+          unit: unit,
+          timeout: timeout,
+          reporter: reporter,
+          onLateAdLoaded: (ad, type, adUnitId) {
+            handleLateAd(
+              placement: placement,
+              ad: ad,
+              type: type,
+              adUnitId: adUnitId,
+            );
+          },
         );
-        return true;
+
+        if (result.isSuccess) {
+          _slots[placement] = PlacementAdSlot(
+            placement: placement,
+            ad: result.ad,
+            loadedSource: unit.source,
+            loadedType: unit.type,
+            adUnitId: unit.id,
+            loadedAt: DateTime.now(),
+          );
+          reporter.report(
+            AdEvent(
+              eventType: AdEventType.loadSucceeded,
+              placement: placement,
+              adType: unit.type,
+              source: unit.source,
+              adUnitId: unit.id,
+              timestamp: DateTime.now(),
+            ),
+          );
+          log.d('✅ [preload] success: ${placement.name} (${unit.type.name})');
+          return true;
+        }
+
+        lastError = result.error;
+        log.d('❌ [preload] fail: ${placement.name} (${unit.type.name}) error=$lastError');
+        reporter.report(
+          AdEvent(
+            eventType: AdEventType.loadFailed,
+            placement: placement,
+            adType: unit.type,
+            source: unit.source,
+            adUnitId: unit.id,
+            errorReason: lastError?.toString(),
+            timestamp: DateTime.now(),
+          ),
+        );
       }
 
-      lastError = result.error;
-      log.d(
-        '[ad][fullscreen][preload] fail placement=$placement type=${unit.type.name} adid=${unit.id} error=$lastError',
+      log.d('❌ [preload] exhausted: ${placement.name}');
+      _slots[placement] = PlacementAdSlot(
+        placement: placement,
+        lastError: lastError,
       );
-      reporter.report(
-        AdEvent(
-          eventType: AdEventType.loadFailed,
-          placement: placement,
-          adType: unit.type,
-          source: unit.source,
-          adUnitId: unit.id,
-          errorCode: _extractErrorCode(lastError),
-          errorReason: _extractErrorReason(lastError),
-          timestamp: DateTime.now(),
-        ),
-      );
+      return false;
+    } catch (e) {
+      log.e('❌ [preload] fatal: ${placement.name} error=$e');
+      _slots[placement] = PlacementAdSlot(placement: placement, lastError: e);
+      return false;
     }
-
-    _slots[placement] = PlacementAdSlot(
-      placement: placement,
-      lastError: lastError,
-    );
-    log.d(
-      '[ad][fullscreen][preload] exhausted placement=$placement error=$lastError',
-    );
-    return false;
   }
 
-  Future<AdShowResult> show(
-    PlacementType placement, {
+  void removeSlot(PlacementType placement) {
+    final slot = _slots[placement];
+    if (slot != null) {
+      log.d('🗑️ [remove_slot] ${placement.name} (${slot.loadedType?.name})');
+      if (slot.ad != null) {
+        adapterRegistry.get(slot.loadedSource!, slot.loadedType!).dispose(
+          slot.ad!,
+        );
+      }
+      _slots.remove(placement);
+    }
+  }
+
+  Future<AdShowResult> show({
+    required PlacementType placement,
     String? placementLabel,
+    VoidCallback? onAdShowed,
   }) async {
     final slot = _slots[placement];
-
-    if (slot?.ad == null ||
-        slot?.loadedType == null ||
-        slot?.loadedSource == null) {
-      log.d(
-        '[ad][fullscreen][show] no_cached_slot placement=${placementLabel ?? placement}',
-      );
-      return AdShowResult.failure('No cached ad for $placement');
+    if (slot == null || slot.ad == null) {
+      return AdShowResult.failure('no_cache');
     }
 
-    final currentSlot = slot!;
-    final loadedSource = currentSlot.loadedSource!;
-    final loadedType = currentSlot.loadedType!;
-    log.d(
-      '[ad][fullscreen][show] use_cache placement=${placementLabel ?? placement} source=${loadedSource.name} type=${loadedType.name} adid=${currentSlot.adUnitId ?? ''}',
-    );
-    final adapter = adapterRegistry.get(loadedSource, loadedType);
+    final ad = slot.ad!;
+    final source = slot.loadedSource!;
+    final type = slot.loadedType!;
+    final adUnitId = slot.adUnitId!;
+    final placementValue = placementLabel ?? placement.name;
+
+    log.d('🚀 [show] use_cache: $placementValue type=${type.name}');
+
+    final adapter = adapterRegistry.get(source, type);
     final result = await adapter.show(
       placement: placement,
       placementLabel: placementLabel,
-      ad: currentSlot.ad!,
+      ad: ad,
       reporter: reporter,
+      onAdShowed: onAdShowed,
       onClosed: () {
-        log.d(
-          '[ad][fullscreen][show] on_closed placement=${placementLabel ?? placement} source=${loadedSource.name} type=${loadedType.name} adid=${currentSlot.adUnitId ?? ''}',
-        );
-        clear(placement);
-        preload(placement);
+        log.d('🚪 [show] closed: $placementValue');
+        removeSlot(placement);
+        unawaited(preload(placement));
       },
     );
-    if (!result.shown) {
-      log.d(
-        '[ad][fullscreen][show] failed placement=${placementLabel ?? placement} source=${loadedSource.name} type=${loadedType.name} error=${result.error}',
-      );
-      clear(placement);
-      preload(placement);
+
+    if (result.shown) {
+      log.d('✅ [show] success: $placementValue');
     } else {
-      log.d(
-        '[ad][fullscreen][show] success placement=${placementLabel ?? placement} source=${loadedSource.name} type=${loadedType.name}',
-      );
+      log.d('❌ [show] fail: $placementValue error=${result.error}');
+      removeSlot(placement);
     }
+
     return result;
-  }
-
-  void clear(PlacementType placement) {
-    final slot = _slots[placement];
-    if (slot != null) {
-      log.d(
-        '[ad][fullscreen][clear] placement=$placement source=${slot.loadedSource?.name ?? ''} type=${slot.loadedType?.name ?? ''} adid=${slot.adUnitId ?? ''}',
-      );
-    }
-    if (slot?.ad != null &&
-        slot?.loadedType != null &&
-        slot?.loadedSource != null) {
-      final adapter = adapterRegistry.get(
-        slot!.loadedSource!,
-        slot.loadedType!,
-      );
-      adapter.dispose(slot.ad!);
-    }
-    _slots.remove(placement);
-  }
-
-  void dispose() {
-    for (final placement in _slots.keys.toList()) {
-      clear(placement);
-    }
-  }
-
-  int? _extractErrorCode(Object? error) {
-    if (error is LoadAdError) {
-      return error.code;
-    }
-    return null;
-  }
-
-  String _extractErrorReason(Object? error) {
-    if (error is LoadAdError) {
-      return error.message;
-    }
-    return '$error';
   }
 }

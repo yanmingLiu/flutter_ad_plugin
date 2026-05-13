@@ -53,6 +53,9 @@ if (ad != null) {
 
 - `AdConfigRepository`: implement your own remote config source.
 - `AdEventReporter`: implement your own analytics reporting.
+- `AdEventType.income`: emitted from AdMob `onPaidEvent` for open, interstitial, rewarded, and native ads.
+- `AdEventType.impression`: emitted from AdMob `onAdImpression`; this is exposure only, not revenue.
+- `FlutterAdPlugin.initFacebookSDK(...)`: optional Meta/Facebook App Events bridge for `AD_IMPRESSION` revenue reporting.
 
 ## Example app
 

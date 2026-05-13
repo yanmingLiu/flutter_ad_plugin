@@ -3,10 +3,10 @@ import '../core/ad_enums.dart';
 
 class AdAdapterRegistry {
   AdAdapterRegistry(List<AdTypeAdapter> adapters)
-    : _adapters = {
-        for (final adapter in adapters)
-          _AdapterKey(adapter.source, adapter.type): adapter,
-      };
+      : _adapters = {
+          for (final adapter in adapters)
+            _AdapterKey(adapter.source, adapter.type): adapter,
+        };
 
   final Map<_AdapterKey, AdTypeAdapter> _adapters;
 
@@ -29,7 +29,9 @@ class _AdapterKey {
 
   @override
   bool operator ==(Object other) {
-    return other is _AdapterKey && other.source == source && other.type == type;
+    return other is _AdapterKey &&
+        other.source == source &&
+        other.type == type;
   }
 
   @override

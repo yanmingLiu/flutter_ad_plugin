@@ -153,6 +153,11 @@ class MyAdEventReporter implements AdEventReporter {
   Future<void> report(AdEvent event) async {
     // Replace with your analytics system:
     // Firebase / AppsFlyer / Adjust / internal BI endpoint.
+    //
+    // Ad revenue comes from AdMob onPaidEvent, not onAdImpression.
+    // event.revenue is the original AdMob valueMicros. Convert it only when
+    // the target platform expects standard currency units, such as Meta
+    // App Events AD_IMPRESSION.
     // ignore: avoid_print
     print(
       '[my-ad-event] type=${event.eventType.name} placement=${event.placement} unit=${event.adUnitId}',

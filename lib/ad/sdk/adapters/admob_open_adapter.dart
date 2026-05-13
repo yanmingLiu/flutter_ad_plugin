@@ -23,29 +23,46 @@ class AdmobOpenAdapter implements AdTypeAdapter<AppOpenAd> {
     required PlacementType placement,
     required AdUnitConfig unit,
     required Duration timeout,
+    required AdEventReporter reporter,
+    void Function(AppOpenAd ad, AdType type, String adUnitId)? onLateAdLoaded,
   }) async {
-    log.d(
-      '[ad][admob_open][load] start placement=$placement adid=${unit.id}',
-    );
+    log.d('📥 load:open:${placement.name} id=${unit.id}');
     final completer = Completer<AdLoadResult<AppOpenAd>>();
+
+    Timer(timeout, () {
+      if (!completer.isCompleted) {
+        log.d('❌ timeout:open:${placement.name}');
+        completer.complete(
+          AdLoadResult.failure(
+            type: type,
+            adUnitId: unit.id,
+            error: TimeoutException('open ad load timeout'),
+          ),
+        );
+      }
+    });
+
     AppOpenAd.load(
       adUnitId: unit.id,
       request: const AdRequest(),
       adLoadCallback: AppOpenAdLoadCallback(
         onAdLoaded: (ad) {
-          log.d(
-            '[ad][admob_open][load] loaded placement=$placement adid=${unit.id}',
-          );
+          log.d('✅ loaded:open:${placement.name}');
           if (!completer.isCompleted) {
             completer.complete(
               AdLoadResult.success(ad: ad, type: type, adUnitId: unit.id),
             );
+          } else {
+            log.d('📥 late_load:open:${placement.name} (cached)');
+            if (onLateAdLoaded != null) {
+              onLateAdLoaded(ad, type, unit.id);
+            } else {
+              ad.dispose();
+            }
           }
         },
         onAdFailedToLoad: (error) {
-          log.d(
-            '[ad][admob_open][load] failed placement=$placement adid=${unit.id} code=${error.code} reason=${error.message}',
-          );
+          log.d('❌ failed:open:${placement.name} code=${error.code}');
           if (!completer.isCompleted) {
             completer.complete(
               AdLoadResult.failure(type: type, adUnitId: unit.id, error: error),
@@ -54,19 +71,8 @@ class AdmobOpenAdapter implements AdTypeAdapter<AppOpenAd> {
         },
       ),
     );
-    return completer.future.timeout(
-      timeout,
-      onTimeout: () {
-        log.d(
-          '[ad][admob_open][load] timeout placement=$placement adid=${unit.id}',
-        );
-        return AdLoadResult.failure(
-          type: type,
-          adUnitId: unit.id,
-          error: TimeoutException('open ad load timeout'),
-        );
-      },
-    );
+
+    return completer.future;
   }
 
   @override
@@ -75,17 +81,15 @@ class AdmobOpenAdapter implements AdTypeAdapter<AppOpenAd> {
     String? placementLabel,
     required AppOpenAd ad,
     required AdEventReporter reporter,
+    VoidCallback? onAdShowed,
     VoidCallback? onClosed,
   }) async {
-    log.d(
-      '[ad][admob_open][show] start placement=${placementLabel ?? placement} adid=${ad.adUnitId}',
-    );
+    final placementValue = placementLabel ?? placement.name;
+    log.d('🚀 show:open:$placementValue');
     final completer = Completer<AdShowResult>();
     ad.fullScreenContentCallback = FullScreenContentCallback<AppOpenAd>(
       onAdShowedFullScreenContent: (ad) {
-        log.d(
-          '[ad][admob_open][show] showed placement=${placementLabel ?? placement} adid=${ad.adUnitId}',
-        );
+        log.d('✅ showed:open:$placementValue');
         reporter.report(
           AdEvent(
             eventType: AdEventType.showSuccess,
@@ -97,14 +101,10 @@ class AdmobOpenAdapter implements AdTypeAdapter<AppOpenAd> {
             timestamp: DateTime.now(),
           ),
         );
-        if (!completer.isCompleted) {
-          completer.complete(AdShowResult.success());
-        }
+        onAdShowed?.call();
       },
       onAdDismissedFullScreenContent: (ad) {
-        log.d(
-          '[ad][admob_open][show] dismissed placement=${placementLabel ?? placement} adid=${ad.adUnitId}',
-        );
+        log.d('🚪 closed:open:$placementValue');
         reporter.report(
           AdEvent(
             eventType: AdEventType.close,
@@ -116,12 +116,14 @@ class AdmobOpenAdapter implements AdTypeAdapter<AppOpenAd> {
             timestamp: DateTime.now(),
           ),
         );
+        ad.dispose();
         onClosed?.call();
+        if (!completer.isCompleted) {
+          completer.complete(AdShowResult.success());
+        }
       },
       onAdFailedToShowFullScreenContent: (ad, error) {
-        log.d(
-          '[ad][admob_open][show] failed placement=${placementLabel ?? placement} adid=${ad.adUnitId} code=${error.code} reason=${error.message}',
-        );
+        log.d('❌ show_failed:open:$placementValue code=${error.code}');
         reporter.report(
           AdEvent(
             eventType: AdEventType.showFail,
@@ -140,27 +142,9 @@ class AdmobOpenAdapter implements AdTypeAdapter<AppOpenAd> {
           completer.complete(AdShowResult.failure(error));
         }
       },
-      onAdClicked: (ad) {
-        log.d(
-          '[ad][admob_open][show] clicked placement=${placementLabel ?? placement} adid=${ad.adUnitId}',
-        );
-        reporter.report(
-          AdEvent(
-            eventType: AdEventType.clicked,
-            placement: placement,
-            placementLabel: placementLabel,
-            adType: type,
-            source: AdSource.admob,
-            adUnitId: ad.adUnitId,
-            timestamp: DateTime.now(),
-          ),
-        );
-      },
     );
     ad.onPaidEvent = (ad, valueMicros, precision, currencyCode) {
-      log.d(
-        '[ad][admob_open][income] placement=${placementLabel ?? placement} adid=${ad.adUnitId} value=$valueMicros currency=$currencyCode',
-      );
+      log.d('💰 income:open:$placementValue value=$valueMicros $currencyCode');
       reporter.report(
         AdEvent(
           eventType: AdEventType.income,

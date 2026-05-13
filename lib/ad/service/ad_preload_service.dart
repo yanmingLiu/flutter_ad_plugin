@@ -10,23 +10,23 @@ class AdPreloadService {
   final AdService adService;
 
   Future<bool> preloadStartupAds() async {
-    log.d('[ad][startup_preload] open_start');
-    final openReady = await adService.preload(Placements.open);
-    log.d('[ad][startup_preload] open_finish ready=$openReady');
+    log.d('📥 [startup] preloading: open');
+    final openReady = await adService.preload(PlacementType.open);
+    log.d('📥 [startup] finish: open (ready=$openReady)');
 
     return openReady;
   }
 
   Future<void> preloadSecondaryAds() async {
     try {
-      log.d('[ad][startup_preload] secondary_start');
+      log.d('📥 [startup] secondary_start');
       await Future.wait([
-        adService.preload(Placements.message),
-        adService.preload(Placements.chatBack),
-        adService.preload(Placements.chatSession),
-        adService.preload(Placements.liveVideo),
+        adService.preload(PlacementType.message),
+        adService.preload(PlacementType.chatBack),
+        adService.preload(PlacementType.chatSession),
+        adService.preload(PlacementType.liveVideo),
       ]);
-      log.d('[ad][startup_preload] secondary_finish');
+      log.d('📥 [startup] secondary_finish');
     } catch (_) {}
   }
 }

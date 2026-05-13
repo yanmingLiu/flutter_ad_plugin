@@ -23,29 +23,47 @@ class AdmobInterstitialAdapter implements AdTypeAdapter<InterstitialAd> {
     required PlacementType placement,
     required AdUnitConfig unit,
     required Duration timeout,
+    required AdEventReporter reporter,
+    void Function(InterstitialAd ad, AdType type, String adUnitId)?
+    onLateAdLoaded,
   }) async {
-    log.d(
-      '[ad][admob_interstitial][load] start placement=$placement adid=${unit.id}',
-    );
+    log.d('📥 load:interstitial:${placement.name} id=${unit.id}');
     final completer = Completer<AdLoadResult<InterstitialAd>>();
+
+    Timer(timeout, () {
+      if (!completer.isCompleted) {
+        log.d('❌ timeout:interstitial:${placement.name}');
+        completer.complete(
+          AdLoadResult.failure(
+            type: type,
+            adUnitId: unit.id,
+            error: TimeoutException('interstitial ad load timeout'),
+          ),
+        );
+      }
+    });
+
     InterstitialAd.load(
       adUnitId: unit.id,
       request: const AdRequest(),
       adLoadCallback: InterstitialAdLoadCallback(
         onAdLoaded: (ad) {
-          log.d(
-            '[ad][admob_interstitial][load] loaded placement=$placement adid=${unit.id}',
-          );
+          log.d('✅ loaded:interstitial:${placement.name}');
           if (!completer.isCompleted) {
             completer.complete(
               AdLoadResult.success(ad: ad, type: type, adUnitId: unit.id),
             );
+          } else {
+            log.d('📥 late_load:interstitial:${placement.name} (cached)');
+            if (onLateAdLoaded != null) {
+              onLateAdLoaded(ad, type, unit.id);
+            } else {
+              ad.dispose();
+            }
           }
         },
         onAdFailedToLoad: (error) {
-          log.d(
-            '[ad][admob_interstitial][load] failed placement=$placement adid=${unit.id} code=${error.code} reason=${error.message}',
-          );
+          log.d('❌ failed:interstitial:${placement.name} code=${error.code}');
           if (!completer.isCompleted) {
             completer.complete(
               AdLoadResult.failure(type: type, adUnitId: unit.id, error: error),
@@ -54,19 +72,8 @@ class AdmobInterstitialAdapter implements AdTypeAdapter<InterstitialAd> {
         },
       ),
     );
-    return completer.future.timeout(
-      timeout,
-      onTimeout: () {
-        log.d(
-          '[ad][admob_interstitial][load] timeout placement=$placement adid=${unit.id}',
-        );
-        return AdLoadResult.failure(
-          type: type,
-          adUnitId: unit.id,
-          error: TimeoutException('interstitial ad load timeout'),
-        );
-      },
-    );
+
+    return completer.future;
   }
 
   @override
@@ -75,17 +82,15 @@ class AdmobInterstitialAdapter implements AdTypeAdapter<InterstitialAd> {
     String? placementLabel,
     required InterstitialAd ad,
     required AdEventReporter reporter,
+    VoidCallback? onAdShowed,
     VoidCallback? onClosed,
   }) async {
-    log.d(
-      '[ad][admob_interstitial][show] start placement=${placementLabel ?? placement} adid=${ad.adUnitId}',
-    );
+    final placementValue = placementLabel ?? placement.name;
+    log.d('🚀 show:interstitial:$placementValue');
     final completer = Completer<AdShowResult>();
     ad.fullScreenContentCallback = FullScreenContentCallback<InterstitialAd>(
       onAdShowedFullScreenContent: (ad) {
-        log.d(
-          '[ad][admob_interstitial][show] showed placement=${placementLabel ?? placement} adid=${ad.adUnitId}',
-        );
+        log.d('✅ showed:interstitial:$placementValue');
         reporter.report(
           AdEvent(
             eventType: AdEventType.showSuccess,
@@ -97,11 +102,10 @@ class AdmobInterstitialAdapter implements AdTypeAdapter<InterstitialAd> {
             timestamp: DateTime.now(),
           ),
         );
+        onAdShowed?.call();
       },
       onAdDismissedFullScreenContent: (ad) {
-        log.d(
-          '[ad][admob_interstitial][show] dismissed placement=${placementLabel ?? placement} adid=${ad.adUnitId}',
-        );
+        log.d('🚪 closed:interstitial:$placementValue');
         reporter.report(
           AdEvent(
             eventType: AdEventType.close,
@@ -113,16 +117,14 @@ class AdmobInterstitialAdapter implements AdTypeAdapter<InterstitialAd> {
             timestamp: DateTime.now(),
           ),
         );
-        onClosed?.call();
         ad.dispose();
+        onClosed?.call();
         if (!completer.isCompleted) {
           completer.complete(AdShowResult.success());
         }
       },
       onAdFailedToShowFullScreenContent: (ad, error) {
-        log.d(
-          '[ad][admob_interstitial][show] failed placement=${placementLabel ?? placement} adid=${ad.adUnitId} code=${error.code} reason=${error.message}',
-        );
+        log.d('❌ show_failed:interstitial:$placementValue code=${error.code}');
         reporter.report(
           AdEvent(
             eventType: AdEventType.showFail,
@@ -141,27 +143,9 @@ class AdmobInterstitialAdapter implements AdTypeAdapter<InterstitialAd> {
           completer.complete(AdShowResult.failure(error));
         }
       },
-      onAdClicked: (ad) {
-        log.d(
-          '[ad][admob_interstitial][show] clicked placement=${placementLabel ?? placement} adid=${ad.adUnitId}',
-        );
-        reporter.report(
-          AdEvent(
-            eventType: AdEventType.clicked,
-            placement: placement,
-            placementLabel: placementLabel,
-            adType: type,
-            source: AdSource.admob,
-            adUnitId: ad.adUnitId,
-            timestamp: DateTime.now(),
-          ),
-        );
-      },
     );
     ad.onPaidEvent = (ad, valueMicros, precision, currencyCode) {
-      log.d(
-        '[ad][admob_interstitial][income] placement=${placementLabel ?? placement} adid=${ad.adUnitId} value=$valueMicros currency=$currencyCode',
-      );
+      log.d('💰 income:interstitial:$placementValue value=$valueMicros $currencyCode');
       reporter.report(
         AdEvent(
           eventType: AdEventType.income,

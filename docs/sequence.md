@@ -36,6 +36,7 @@ sequenceDiagram
   Full->>Reporter: ad_show
   Full->>Adapter: show(ad)
   Adapter-->>Reporter: ad_show_succ/ad_show_fail
+  Adapter-->>Reporter: income(onPaidEvent)
   Full-->>Service: AdShowResult
   Service-->>App: bool
 ```
@@ -55,6 +56,7 @@ sequenceDiagram
   Native->>Adapter: load(unit)
   Adapter->>Factory: factoryId=homeListTile
   Factory-->>Adapter: NativeAdView
+  Adapter-->>Reporter: income(onPaidEvent)
   Adapter-->>Native: NativeAd
   App->>Service: getNativeAd(placement)
   Service-->>App: NativeAd?

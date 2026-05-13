@@ -2,7 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
 
 class NativeAdView extends StatelessWidget {
-  const NativeAdView({super.key, required this.ad, this.height = 280});
+  const NativeAdView({
+    super.key,
+    required this.ad,
+    this.height = 280,
+  });
 
   final NativeAd ad;
   final double height;

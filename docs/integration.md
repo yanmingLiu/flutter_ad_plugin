@@ -19,6 +19,22 @@ await FlutterAdPlugin.init(
 );
 ```
 
+如果需要把广告收入同步到 Meta/Facebook App Events，先在宿主云控拿到
+Facebook `appId` / `clientToken` 后初始化：
+
+```dart
+await FlutterAdPlugin.initFacebookSDK(
+  appId: facebookAppIdFromRemoteConfig,
+  clientToken: facebookClientTokenFromRemoteConfig,
+);
+```
+
+初始化时机建议：
+
+- 先完成云控拉取，再调用 `initFacebookSDK`
+- 不要在 paid 回调里临时初始化 Facebook SDK
+- 如果开屏广告收入回调早于 SDK 初始化完成，默认实现会缓存最多 50 条收入事件，初始化成功后 flush
+
 ### 埋点接入（外部项目）
 
 插件不会绑定具体埋点平台，宿主项目需要实现 `AdEventReporter` 并在初始化时注入。
@@ -58,6 +74,8 @@ class MyAdEventReporter implements AdEventReporter {
 - `show`
 - `showSuccess`
 - `showFail`
+- `impression`
+- `clicked`
 - `close`
 - `rewardEarned`
 - `income`
@@ -66,8 +84,22 @@ class MyAdEventReporter implements AdEventReporter {
 埋点建议：
 
 - 失败事件（`loadFailed/showFail`）务必上报 `error_code`、`error_reason`
-- 收益事件（`income`）务必上报 `revenue`、`currency`、`ad_unit_id`
+- 收益事件（`income`）来自 `onPaidEvent`，务必上报 `revenue`、`currency`、`ad_unit_id`
+- `revenue` 保留 AdMob 回调的 `valueMicros` 原始值；发给 Meta/Facebook `AD_IMPRESSION` 时再除以 `1000000`
+- `impression` 来自 `onAdImpression`，只代表曝光发生，不带金额和币种，不能替代广告收入埋点
 - 业务广告位建议优先使用 `placementLabel`，未传时回退 `placement`
+
+默认 `DefaultAdEventReporter` 会额外尝试通过 `facebook_sdk_init`
+MethodChannel 发送 Meta/Facebook 标准事件：
+
+- method: `initializeFbSDK`
+- method: `logAdImpression`
+- event: `AppEventsConstants.EVENT_NAME_AD_IMPRESSION`
+- currency param: `AppEventsConstants.EVENT_PARAM_CURRENCY`
+- 当前仓库内置 Android 示例桥接；iOS 宿主需要按同样 MethodChannel 约定接入 FBSDKCoreKit
+
+如果宿主使用自定义 `AdEventReporter`，也可以直接在 `AdEventType.income`
+里自行接 Firebase / AppsFlyer / Adjust / 自研 BI / Meta App Events。
 
 ## 3) 开屏/全屏广告
 

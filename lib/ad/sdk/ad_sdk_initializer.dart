@@ -10,9 +10,9 @@ abstract class AdSourceSdkInitializer {
 
 class AdSdkInitializer {
   AdSdkInitializer(List<AdSourceSdkInitializer> initializers)
-    : _initializers = {
-        for (final initializer in initializers) initializer.source: initializer,
-      };
+      : _initializers = {
+          for (final initializer in initializers) initializer.source: initializer,
+        };
 
   final Map<AdSource, AdSourceSdkInitializer> _initializers;
 
@@ -36,7 +36,9 @@ class AdSdkInitializer {
 }
 
 AdSdkInitializer createDefaultAdSdkInitializer() {
-  return AdSdkInitializer([AdmobSdkInitializer()]);
+  return AdSdkInitializer([
+    AdmobSdkInitializer(),
+  ]);
 }
 
 class AdmobSdkInitializer implements AdSourceSdkInitializer {
