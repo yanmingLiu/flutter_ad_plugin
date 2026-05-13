@@ -3,12 +3,27 @@ import 'package:flutter_ad_plugin/flutter_ad_plugin.dart';
 
 import 'integration_templates.dart';
 
+import 'utils/facebook_util.dart';
+
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // 初始化广告引擎
   await FlutterAdPlugin.init(
     configRepository: MyConfigRepository(),
     eventReporter: MyAdEventReporter(),
   );
+
+  // 初始化业务侧工具（如 Facebook SDK）
+  try {
+    await FacebookSDKUtil.initializeFacebookSDK(
+      appId: 'YOUR_FB_APP_ID',
+      clientToken: 'YOUR_FB_CLIENT_TOKEN',
+    );
+  } catch (e) {
+    debugPrint('FB Init Error: $e');
+  }
+
   runApp(const FlutterAdPluginApp());
 }
 

@@ -40,14 +40,18 @@ class AdEngine {
     required AdConfigRepository configRepository,
     required AdEventReporter eventReporter,
   }) async {
-    if (_initialized) return;
+    if (_initialized) {
+      return;
+    }
     _configRepository = configRepository;
     _reporter = eventReporter;
     await init();
   }
 
   Future<void> init() async {
-    if (_initialized) return;
+    if (_initialized) {
+      return;
+    }
 
     _sdkInitializer = AdSdkInitializer([AdmobSdkInitializer()]);
     _adapterRegistry = AdAdapterRegistry([
@@ -297,8 +301,12 @@ class AdEngine {
 
   Future<bool> preloadNative(PlacementType placement) async {
     final current = _nativeSlots[placement];
-    if (current?.isLoading == true) return false;
-    if (current?.hasAd == true) return true;
+    if (current?.isLoading == true) {
+      return false;
+    }
+    if (current?.hasAd == true) {
+      return true;
+    }
 
     log.d('📥 [preload] start: native:${placement.name}');
     _nativeSlots[placement] = PlacementAdSlot(
@@ -396,7 +404,9 @@ class AdEngine {
     final list = c.preloadList.toSet();
 
     for (final p in list) {
-      if (p == PlacementType.open) continue; // 已经在 init 中加载过了
+      if (p == PlacementType.open) {
+        continue; // 已经在 init 中加载过了
+      }
       final policy = c.getPolicy(p);
       if (policy.isFullscreen) {
         unawaited(preload(p));

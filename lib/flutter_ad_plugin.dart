@@ -5,13 +5,11 @@ import 'src/core/ad_enums.dart';
 import 'src/engine/ad_engine.dart';
 import 'src/ui/native_ad_view.dart';
 import 'src/utils/ad_reporter.dart';
-import 'src/utils/facebook_util.dart';
 
 export 'src/core/ad_config.dart';
 export 'src/core/ad_enums.dart';
 export 'src/ui/native_ad_view.dart';
 export 'src/utils/ad_reporter.dart';
-export 'src/utils/facebook_util.dart';
 
 class FlutterAdPlugin {
   FlutterAdPlugin._();
@@ -26,15 +24,6 @@ class FlutterAdPlugin {
     );
   }
 
-  static Future<void> initFacebookSDK({
-    required String appId,
-    required String clientToken,
-  }) {
-    return FacebookSDKUtil.initializeFacebookSDK(
-      appId: appId,
-      clientToken: clientToken,
-    );
-  }
 
   static Future<bool> preload(PlacementType placement) {
     return AdEngine.instance.preload(placement);

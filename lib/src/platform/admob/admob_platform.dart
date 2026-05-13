@@ -66,10 +66,11 @@ class AdmobOpenAdapter implements AdTypeAdapter {
             );
           } else {
             log.d('📥 late_load:open:${placement.name} (cached)');
-            if (onLateAdLoaded != null)
+            if (onLateAdLoaded != null) {
               onLateAdLoaded(ad, type, unit.id);
-            else
+            } else {
               ad.dispose();
+            }
           }
         },
         onAdFailedToLoad: (error) {
@@ -209,10 +210,11 @@ class AdmobInterstitialAdapter implements AdTypeAdapter {
             );
           } else {
             log.d('📥 late_load:interstitial:${placement.name} (cached)');
-            if (onLateAdLoaded != null)
+            if (onLateAdLoaded != null) {
               onLateAdLoaded(ad, type, unit.id);
-            else
+            } else {
               ad.dispose();
+            }
           }
         },
         onAdFailedToLoad: (error) {
@@ -352,10 +354,11 @@ class AdmobRewardedAdapter implements AdTypeAdapter {
             );
           } else {
             log.d('📥 late_load:rewarded:${placement.name} (cached)');
-            if (onLateAdLoaded != null)
+            if (onLateAdLoaded != null) {
               onLateAdLoaded(ad, type, unit.id);
-            else
+            } else {
               ad.dispose();
+            }
           }
         },
         onAdFailedToLoad: (error) {
@@ -466,8 +469,9 @@ class AdmobRewardedAdapter implements AdTypeAdapter {
       },
     );
 
-    if (!completer.isCompleted)
+    if (!completer.isCompleted) {
       completer.complete(AdShowResult.success(rewardEarned: rewardEarned));
+    }
     return completer.future;
   }
 
@@ -527,19 +531,21 @@ class AdmobNativeAdapter implements AdTypeAdapter {
             );
           } else {
             log.d('📥 late_load:native:${placement.name} (cached)');
-            if (onLateAdLoaded != null)
+            if (onLateAdLoaded != null) {
               onLateAdLoaded(ad as NativeAd, type, unit.id);
-            else
+            } else {
               ad.dispose();
+            }
           }
         },
         onAdFailedToLoad: (ad, error) {
           log.d('❌ failed:native:${placement.name} code=${error.code}');
           ad.dispose();
-          if (!completer.isCompleted)
+          if (!completer.isCompleted) {
             completer.complete(
               AdLoadResult.failure(type: type, adUnitId: unit.id, error: error),
             );
+          }
         },
         onAdClicked: (ad) {
           reporter.report(

@@ -115,8 +115,12 @@ class AdConfigParser {
     };
 
     json.forEach((key, value) {
-      if (globalKeys.contains(key)) return;
-      if (value is! List) return;
+      if (globalKeys.contains(key)) {
+        return;
+      }
+      if (value is! List) {
+        return;
+      }
 
       final placement = PlacementType(key);
       final parsed =

@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:flutter_ad_plugin/flutter_ad_plugin.dart';
+import 'utils/facebook_util.dart';
 
 class MyConfigRepository implements AdConfigRepository {
   static const Map<String, dynamic> _jsonConfig = {
@@ -67,5 +68,16 @@ class MyAdEventReporter implements AdEventReporter {
     print(
       '[my-ad-event] type=${event.eventType.name} placement=${event.placement} unit=${event.adUnitId}',
     );
+
+    // 示例：将广告收入上报至 Facebook
+    if (event.eventType == AdEventType.income && event.revenue != null) {
+      FacebookSDKUtil.logAdImpression(
+        value: event.revenue!,
+        currency: event.currency ?? 'USD',
+        adType: event.adType.name,
+        adSource: event.source.name,
+        adUnitId: event.adUnitId,
+      );
+    }
   }
 }

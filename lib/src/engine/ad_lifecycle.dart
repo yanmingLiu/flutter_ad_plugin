@@ -12,7 +12,9 @@ class AdLifecycle with WidgetsBindingObserver {
   bool _started = false;
 
   void start() {
-    if (_started) return;
+    if (_started) {
+      return;
+    }
     _started = true;
     WidgetsBinding.instance.addObserver(this);
   }
@@ -25,7 +27,9 @@ class AdLifecycle with WidgetsBindingObserver {
   }
 
   Future<void> _onForeground() async {
-    if (_isHandlingForeground) return;
+    if (_isHandlingForeground) {
+      return;
+    }
     _isHandlingForeground = true;
     try {
       await _engine.show(PlacementType.open);
