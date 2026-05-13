@@ -42,6 +42,9 @@ class AdType {
   @override
   int get hashCode => name.hashCode;
 
+  bool get isFullscreen =>
+      this == open || this == interstitial || this == rewarded;
+
   @override
   String toString() => name;
 }
@@ -67,18 +70,4 @@ class AdSource {
 
   @override
   String toString() => name;
-}
-
-enum AdEventType {
-  loadRequested,
-  loadSucceeded,
-  loadFailed,
-  show,
-  showSuccess,
-  clicked,
-  income,
-  close,
-  rewardEarned,
-  showFail,
-  blockedByGuard,
 }

@@ -1,13 +1,13 @@
 import 'package:flutter/widgets.dart';
 
-import '../../tools/log_tool.dart';
+import '../utils/ad_logger.dart';
 import '../core/ad_enums.dart';
-import 'ad_service.dart';
+import 'ad_engine.dart';
 
-class AdLifecycleService with WidgetsBindingObserver {
-  AdLifecycleService(this._adService);
+class AdLifecycle with WidgetsBindingObserver {
+  AdLifecycle(this._engine);
 
-  final AdService _adService;
+  final AdEngine _engine;
   bool _isHandlingForeground = false;
   bool _started = false;
 
@@ -28,7 +28,7 @@ class AdLifecycleService with WidgetsBindingObserver {
     if (_isHandlingForeground) return;
     _isHandlingForeground = true;
     try {
-      await _adService.show(PlacementType.open);
+      await _engine.show(PlacementType.open);
     } catch (e) {
       log.e('[ad] lifecycle foreground show failed: $e');
     } finally {

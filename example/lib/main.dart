@@ -9,11 +9,6 @@ Future<void> main() async {
     configRepository: MyConfigRepository(),
     eventReporter: MyAdEventReporter(),
   );
-  // 预加载
-  await FlutterAdPlugin.preload(PlacementType.open);
-  FlutterAdPlugin.loadNative(PlacementType.home);
-  FlutterAdPlugin.loadNative(PlacementType.message);
-
   runApp(const FlutterAdPluginApp());
 }
 

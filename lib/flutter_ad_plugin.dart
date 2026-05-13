@@ -1,19 +1,17 @@
 import 'package:flutter/widgets.dart';
 
-import 'ad/analytics/ad_event_reporter.dart';
-import 'ad/config/ad_config_repository.dart';
-import 'ad/core/ad_enums.dart';
-import 'ad/service/ad_service.dart';
-import 'ad/ui/native_ad_view.dart';
-import 'tools/facebook_util.dart';
+import 'src/core/ad_config.dart';
+import 'src/core/ad_enums.dart';
+import 'src/engine/ad_engine.dart';
+import 'src/ui/native_ad_view.dart';
+import 'src/utils/ad_reporter.dart';
+import 'src/utils/facebook_util.dart';
 
-export 'ad/analytics/ad_event.dart';
-export 'ad/analytics/ad_event_reporter.dart';
-export 'ad/config/ad_config_repository.dart';
-export 'ad/core/ad_config.dart';
-export 'ad/core/ad_enums.dart';
-export 'ad/ui/native_ad_view.dart';
-export 'tools/facebook_util.dart';
+export 'src/core/ad_config.dart';
+export 'src/core/ad_enums.dart';
+export 'src/ui/native_ad_view.dart';
+export 'src/utils/ad_reporter.dart';
+export 'src/utils/facebook_util.dart';
 
 class FlutterAdPlugin {
   FlutterAdPlugin._();
@@ -22,7 +20,7 @@ class FlutterAdPlugin {
     required AdConfigRepository configRepository,
     required AdEventReporter eventReporter,
   }) {
-    return AdService.instance.initWith(
+    return AdEngine.instance.initWith(
       configRepository: configRepository,
       eventReporter: eventReporter,
     );
@@ -39,29 +37,19 @@ class FlutterAdPlugin {
   }
 
   static Future<bool> preload(PlacementType placement) {
-    return AdService.instance.preload(placement);
+    return AdEngine.instance.preload(placement);
   }
 
   static Future<bool> show(PlacementType placement, {String? placementLabel}) {
-    return AdService.instance.show(placement, placementLabel: placementLabel);
+    return AdEngine.instance.show(placement, placementLabel: placementLabel);
   }
 
   static Future<bool> loadNative(PlacementType placement) {
-    return AdService.instance.loadNative(placement);
+    return AdEngine.instance.preloadNative(placement);
   }
 
   static Object? getNativeAd(PlacementType placement) {
-    return AdService.instance.getNativeAd(placement);
-  }
-
-  static Future<Object?> showNative(
-    PlacementType placement, {
-    String? placementLabel,
-  }) {
-    return AdService.instance.showNative(
-      placement,
-      placementLabel: placementLabel,
-    );
+    return AdEngine.instance.getNativeAd(placement);
   }
 
   static Widget nativeAdWidget({required Object ad, double height = 280}) {

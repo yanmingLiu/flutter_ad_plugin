@@ -1,6 +1,5 @@
+import 'package:flutter_ad_plugin/flutter_ad_plugin.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:flutter_ad_plugin/ad/config/ad_config_parser.dart';
-import 'package:flutter_ad_plugin/ad/core/ad_enums.dart';
 
 void main() {
   test('parses placement ad units', () {
