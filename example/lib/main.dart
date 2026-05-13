@@ -89,8 +89,25 @@ class _AdDemoHomePageState extends State<AdDemoHomePage> {
   @override
   void initState() {
     super.initState();
-    // 获取已加载的原生广告
-    _nativeAd = FlutterAdPlugin.getNativeAd(PlacementType.home);
+    _initNativeAd();
+  }
+
+  Future<void> _initNativeAd() async {
+    // 优先尝试获取已加载的
+    var ad = FlutterAdPlugin.getNativeAd(PlacementType.home);
+    if (ad == null) {
+      setState(() => _status = 'Waiting for native ad...');
+      // 如果还没加载好，则发起加载并等待（引擎已优化，此处会挂载到 init 时的预加载任务上）
+      await FlutterAdPlugin.loadNative(PlacementType.home);
+      ad = FlutterAdPlugin.getNativeAd(PlacementType.home);
+    }
+
+    if (mounted) {
+      setState(() {
+        _nativeAd = ad;
+        _status = ad == null ? 'Native ad load failed' : 'Native ad ready';
+      });
+    }
   }
 
   Future<void> _showFullscreen(PlacementType placement) async {

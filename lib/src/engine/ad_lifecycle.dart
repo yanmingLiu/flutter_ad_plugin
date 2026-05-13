@@ -10,12 +10,14 @@ class AdLifecycle with WidgetsBindingObserver {
   final AdEngine _engine;
   bool _isHandlingForeground = false;
   bool _started = false;
+  DateTime? _startTime;
 
   void start() {
     if (_started) {
       return;
     }
     _started = true;
+    _startTime = DateTime.now();
     WidgetsBinding.instance.addObserver(this);
   }
 
@@ -30,6 +32,13 @@ class AdLifecycle with WidgetsBindingObserver {
     if (_isHandlingForeground) {
       return;
     }
+
+    // 冷启动保护：如果启动不到 3 秒，不自动触发开屏，由业务侧（如 Splash）手动控制
+    if (_startTime != null &&
+        DateTime.now().difference(_startTime!).inSeconds < 3) {
+      return;
+    }
+
     _isHandlingForeground = true;
     try {
       await _engine.show(PlacementType.open);

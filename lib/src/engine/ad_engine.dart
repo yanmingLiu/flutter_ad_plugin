@@ -27,6 +27,7 @@ class AdEngine {
 
   final Map<PlacementType, PlacementAdSlot> _fullscreenSlots = {};
   final Map<PlacementType, Future<bool>> _fullscreenLoadingFutures = {};
+  final Map<PlacementType, Future<bool>> _nativeLoadingFutures = {};
 
   final Map<PlacementType, PlacementAdSlot> _nativeSlots = {};
   final Map<PlacementType, Timer> _nativeRefreshTimers = {};
@@ -300,67 +301,86 @@ class AdEngine {
   // --- Native Logic ---
 
   Future<bool> preloadNative(PlacementType placement) async {
-    final current = _nativeSlots[placement];
-    if (current?.isLoading == true) {
-      return false;
+    if (_nativeLoadingFutures.containsKey(placement)) {
+      log.d('📥 [preload] wait: native:${placement.name}');
+      return await _nativeLoadingFutures[placement]!;
     }
+
+    final current = _nativeSlots[placement];
     if (current?.hasAd == true) {
       return true;
     }
 
     log.d('📥 [preload] start: native:${placement.name}');
+    final loadFuture = _performNativeLoad(placement);
+    _nativeLoadingFutures[placement] = loadFuture;
+
+    try {
+      return await loadFuture;
+    } finally {
+      _nativeLoadingFutures.remove(placement);
+    }
+  }
+
+  Future<bool> _performNativeLoad(PlacementType placement) async {
     _nativeSlots[placement] = PlacementAdSlot(
       placement: placement,
       isLoading: true,
     );
 
-    final config = await _configRepository.getConfig();
-    final policy = config.getPolicy(placement);
-    final units =
-        config
-            .getUnits(placement)
-            .where((u) => u.isValid && policy.supports(u.type))
-            .toList()
-          ..sort((a, b) => b.weight.compareTo(a.weight));
+    try {
+      final config = await _configRepository.getConfig();
+      final policy = config.getPolicy(placement);
+      final units =
+          config
+              .getUnits(placement)
+              .where((u) => u.isValid && policy.supports(u.type))
+              .toList()
+            ..sort((a, b) => b.weight.compareTo(a.weight));
 
-    for (final unit in units) {
-      _reportEvent(
-        AdEventType.loadRequested,
-        placement,
-        unit.type,
-        unit.source,
-        unit.id,
-      );
-      final adapter = _adapterRegistry.get(unit.source, unit.type);
-      final result = await adapter.load(
-        placement: placement,
-        unit: unit,
-        timeout: Duration(seconds: config.loadTimeoutSeconds),
-        reporter: _reporter,
-      );
-
-      if (result.isSuccess) {
-        _nativeSlots[placement] = PlacementAdSlot(
-          placement: placement,
-          ad: result.ad,
-          loadedSource: unit.source,
-          loadedType: unit.type,
-          adUnitId: unit.id,
-          loadedAt: DateTime.now(),
-        );
-        _scheduleNativeRefresh(placement, unit.refreshMinutes);
+      for (final unit in units) {
         _reportEvent(
-          AdEventType.loadSucceeded,
+          AdEventType.loadRequested,
           placement,
           unit.type,
           unit.source,
           unit.id,
         );
-        return true;
+        final adapter = _adapterRegistry.get(unit.source, unit.type);
+        final result = await adapter.load(
+          placement: placement,
+          unit: unit,
+          timeout: Duration(seconds: config.loadTimeoutSeconds),
+          reporter: _reporter,
+        );
+
+        if (result.isSuccess) {
+          _nativeSlots[placement] = PlacementAdSlot(
+            placement: placement,
+            ad: result.ad,
+            loadedSource: unit.source,
+            loadedType: unit.type,
+            adUnitId: unit.id,
+            loadedAt: DateTime.now(),
+          );
+          _scheduleNativeRefresh(placement, unit.refreshMinutes);
+          _reportEvent(
+            AdEventType.loadSucceeded,
+            placement,
+            unit.type,
+            unit.source,
+            unit.id,
+          );
+          return true;
+        }
       }
+      _nativeSlots[placement] = PlacementAdSlot(placement: placement);
+      return false;
+    } catch (e) {
+      log.e('❌ [preload] fatal: native:${placement.name} error=$e');
+      _nativeSlots[placement] = PlacementAdSlot(placement: placement);
+      return false;
     }
-    _nativeSlots[placement] = PlacementAdSlot(placement: placement);
-    return false;
   }
 
   Object? getNativeAd(PlacementType placement) => _nativeSlots[placement]?.ad;
