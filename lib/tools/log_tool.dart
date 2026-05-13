@@ -4,10 +4,10 @@ final log = AppLogger();
 
 class AppLogger {
   void d(Object message) {
-    debugPrint(message.toString());
+    debugPrint('[ad] $message');
   }
 
   void e(Object message) {
-    debugPrint('[error] $message');
+    debugPrint('[ad] $message');
   }
 }

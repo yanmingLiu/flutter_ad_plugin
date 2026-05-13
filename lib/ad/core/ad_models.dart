@@ -1,10 +1,9 @@
-import 'package:google_mobile_ads/google_mobile_ads.dart';
-
 import 'ad_enums.dart';
 
 class PlacementAdSlot {
   final PlacementType placement;
-  final Ad? ad;
+  /// 原始广告对象（可以是 AdMob 的 Ad，也可以是 MAX 的 Ad 对象）
+  final Object? ad;
   final AdSource? loadedSource;
   final AdType? loadedType;
   final String? adUnitId;
@@ -26,7 +25,7 @@ class PlacementAdSlot {
   bool get hasAd => ad != null;
 
   PlacementAdSlot copyWith({
-    Ad? ad,
+    Object? ad,
     AdSource? loadedSource,
     AdType? loadedType,
     String? adUnitId,
@@ -48,7 +47,7 @@ class PlacementAdSlot {
   }
 }
 
-class AdLoadResult<TAd extends Ad> {
+class AdLoadResult<TAd extends Object> {
   final TAd? ad;
   final AdType type;
   final String adUnitId;

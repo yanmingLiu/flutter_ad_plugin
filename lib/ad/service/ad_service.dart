@@ -1,6 +1,5 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter_smart_dialog/flutter_smart_dialog.dart';
-import 'package:google_mobile_ads/google_mobile_ads.dart';
 import 'package:flutter_ad_plugin/ad/core/ad_config.dart';
 
 import '../../tools/log_tool.dart';
@@ -10,13 +9,14 @@ import '../config/ad_config_repository.dart';
 import '../controller/fullscreen_ad_controller.dart';
 import '../controller/native_ad_controller.dart';
 import '../core/ad_enums.dart';
-import '../core/placement_policy.dart';
+import '../core/ad_models.dart';
 import '../sdk/ad_adapter_registry.dart';
 import '../sdk/ad_sdk_initializer.dart';
 import '../sdk/adapters/admob_interstitial_adapter.dart';
 import '../sdk/adapters/admob_native_adapter.dart';
 import '../sdk/adapters/admob_open_adapter.dart';
 import '../sdk/adapters/admob_rewarded_adapter.dart';
+import '../sdk/initializers/admob_initializer.dart';
 import 'ad_display_guard.dart';
 import 'ad_lifecycle_service.dart';
 import 'ad_preload_service.dart';
@@ -28,7 +28,7 @@ class AdService {
 
   AdConfigRepository _configRepository = DefaultAdConfigRepository();
   AdEventReporter _reporter = DefaultAdEventReporter();
-  final AdSdkInitializer _sdkInitializer = createDefaultAdSdkInitializer();
+  late final AdSdkInitializer _sdkInitializer;
   final AdAdapterRegistry _adapterRegistry = AdAdapterRegistry([
     AdmobOpenAdapter(),
     AdmobInterstitialAdapter(),
@@ -59,6 +59,11 @@ class AdService {
 
   Future<void> init() async {
     if (_initialized) return;
+    
+    _sdkInitializer = AdSdkInitializer([
+      AdmobSdkInitializer(),
+    ]);
+
     _fullscreenController = FullscreenAdController(
       configRepository: _configRepository,
       adapterRegistry: _adapterRegistry,
@@ -131,6 +136,9 @@ class AdService {
       await _fullscreenController.preload(placement);
     }
 
+    final adConfig = await config;
+    final policy = adConfig.getPolicy(placement);
+
     if (!_fullscreenController.hasAvailableAd(placement)) {
       log.d('❌ [service] show_failed: $placementValue reason=no_cache');
       final slot = _fullscreenController.getSlot(placement);
@@ -165,24 +173,25 @@ class AdService {
           timestamp: DateTime.now(),
         ),
       );
-      if (PlacementPolicies.of(placement).showNotReadyToast) {
-        SmartDialog.showToast('The ad is not ready, please try again later.');
+      
+      if (policy.showNotReadyToast) {
+        SmartDialog.showToast(policy.notReadyMsg ?? 'The ad is not ready, please try again later.');
       }
       return false;
     }
 
     log.d('🚀 [service] displaying: $placementValue');
-    _guard.markShowStarted(placement);
+    _guard.markShowStarted(placement, policy);
     final result = await _fullscreenController.show(
       placement: placement,
       placementLabel: placementLabel,
       onAdShowed: onAdShowed,
     );
     if (result.shown) {
-      _guard.markShowCompleted(placement);
+      _guard.markShowCompleted(placement, policy);
       log.d('✅ [service] shown: $placementValue');
     } else {
-      _guard.markShowFailed(placement);
+      _guard.markShowFailed(placement, policy);
       log.d('❌ [service] show_failed: $placementValue error=${result.error}');
     }
     return result.shown;
@@ -193,11 +202,11 @@ class AdService {
     return _nativeController.preload(placement);
   }
 
-  NativeAd? getNativeAd(PlacementType placement) {
+  Object? getNativeAd(PlacementType placement) {
     return _nativeController.getAd(placement);
   }
 
-  Future<NativeAd?> showNative(
+  Future<Object?> showNative(
     PlacementType placement, {
     String? placementLabel,
   }) async {

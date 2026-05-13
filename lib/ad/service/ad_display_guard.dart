@@ -1,6 +1,6 @@
 import '../config/ad_config_repository.dart';
+import '../core/ad_config.dart';
 import '../core/ad_enums.dart';
-import '../core/placement_policy.dart';
 
 enum AdGuardBlockReason {
   fullscreenShowing,
@@ -38,7 +38,7 @@ class AdDisplayGuard {
     required AdConfigRepository configRepository,
   }) async {
     final config = await configRepository.getConfig();
-    final policy = PlacementPolicies.of(placement);
+    final policy = config.getPolicy(placement);
     if (!policy.isFullscreen) {
       return const AdGuardResult.allowed();
     }
@@ -84,17 +84,16 @@ class AdDisplayGuard {
     return const AdGuardResult.allowed();
   }
 
-  void markShowStarted(PlacementType placement) {
-    if (PlacementPolicies.of(placement).isFullscreen) {
+  void markShowStarted(PlacementType placement, PlacementPolicy policy) {
+    if (policy.isFullscreen) {
       _isFullscreenShowing = true;
     }
   }
 
-  void markShowCompleted(PlacementType placement) {
+  void markShowCompleted(PlacementType placement, PlacementPolicy policy) {
     final now = DateTime.now();
     _lastShownByPlacement[placement] = now;
 
-    final policy = PlacementPolicies.of(placement);
     if (policy.contributesToGlobalCooldown) {
       _lastGlobalShownAt = now;
       _lastGlobalPlacement = placement;
@@ -102,8 +101,8 @@ class AdDisplayGuard {
     _isFullscreenShowing = false;
   }
 
-  void markShowFailed(PlacementType placement) {
-    if (PlacementPolicies.of(placement).isFullscreen) {
+  void markShowFailed(PlacementType placement, PlacementPolicy policy) {
+    if (policy.isFullscreen) {
       _isFullscreenShowing = false;
     }
   }

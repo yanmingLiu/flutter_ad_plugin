@@ -19,13 +19,12 @@ class AdPreloadService {
 
   Future<void> preloadSecondaryAds() async {
     try {
-      log.d('📥 [startup] secondary_start');
-      await Future.wait([
-        adService.preload(PlacementType.message),
-        adService.preload(PlacementType.chatBack),
-        adService.preload(PlacementType.chatSession),
-        adService.preload(PlacementType.liveVideo),
-      ]);
+      final config = await adService.config;
+      final preloadList = config.preloadList;
+      if (preloadList.isEmpty) return;
+
+      log.d('📥 [startup] secondary_start: ${preloadList.length} units');
+      await Future.wait(preloadList.map((p) => adService.preload(p)));
       log.d('📥 [startup] secondary_finish');
     } catch (_) {}
   }

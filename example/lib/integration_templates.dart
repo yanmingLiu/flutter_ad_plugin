@@ -1,8 +1,9 @@
+import 'dart:convert';
+
 import 'package:flutter_ad_plugin/ad/analytics/ad_event.dart';
 import 'package:flutter_ad_plugin/ad/analytics/ad_event_reporter.dart';
-import 'package:flutter_ad_plugin/ad/config/ad_config_repository.dart';
 import 'package:flutter_ad_plugin/ad/config/ad_config_parser.dart';
-import 'dart:convert';
+import 'package:flutter_ad_plugin/ad/config/ad_config_repository.dart';
 import 'package:flutter_ad_plugin/ad/core/ad_config.dart';
 
 class MyConfigRepository implements AdConfigRepository {
@@ -10,6 +11,8 @@ class MyConfigRepository implements AdConfigRepository {
     'load_timeout': 7,
     'same_placement_cd': 30,
     'different_placement_cd': 30,
+    // 启动后自动预加载的列表
+    'preload_list': ['open', 'home', 'message'],
     'placement_policy': {
       'open': {
         'is_fullscreen': true,
@@ -31,6 +34,7 @@ class MyConfigRepository implements AdConfigRepository {
         'apply_different_placement_cd': false,
         'contributes_to_global_cooldown': false,
         'show_not_ready_toast': true,
+        'not_ready_msg': 'Ad is still loading, please wait a moment.',
       },
       'chatBack': {
         'is_fullscreen': true,
@@ -80,6 +84,8 @@ class MyConfigRepository implements AdConfigRepository {
         'weight': 1,
         'type': 'native',
         'id': 'ca-app-pub-3940256099942544/1044960115',
+        'template_type': 'medium',
+        'refresh_minutes': 20,
       },
     ],
     'message': [
@@ -151,13 +157,6 @@ class MyConfigRepository implements AdConfigRepository {
 class MyAdEventReporter implements AdEventReporter {
   @override
   Future<void> report(AdEvent event) async {
-    // Replace with your analytics system:
-    // Firebase / AppsFlyer / Adjust / internal BI endpoint.
-    //
-    // Ad revenue comes from AdMob onPaidEvent, not onAdImpression.
-    // event.revenue is the original AdMob valueMicros. Convert it only when
-    // the target platform expects standard currency units, such as Meta
-    // App Events AD_IMPRESSION.
     // ignore: avoid_print
     print(
       '[my-ad-event] type=${event.eventType.name} placement=${event.placement} unit=${event.adUnitId}',

@@ -8,14 +8,21 @@ class NativeAdView extends StatelessWidget {
     this.height = 280,
   });
 
-  final NativeAd ad;
+  /// 原始广告对象（AdMob NativeAd 或其他平台的广告对象）
+  final Object ad;
   final double height;
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      height: height,
-      child: AdWidget(ad: ad),
-    );
+    if (ad is NativeAd) {
+      return SizedBox(
+        height: height,
+        child: AdWidget(ad: ad as NativeAd),
+      );
+    }
+    
+    // 如果将来有其他平台，在这里继续扩展 else if (ad is MaxNativeAd) ...
+    
+    return const SizedBox.shrink();
   }
 }

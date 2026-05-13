@@ -1,10 +1,10 @@
-import 'package:google_mobile_ads/google_mobile_ads.dart';
+import 'package:flutter/widgets.dart';
 
 import '../../tools/log_tool.dart';
 import '../core/ad_enums.dart';
 import 'ad_service.dart';
 
-class AdLifecycleService {
+class AdLifecycleService with WidgetsBindingObserver {
   AdLifecycleService(this._adService);
 
   final AdService _adService;
@@ -14,12 +14,14 @@ class AdLifecycleService {
   void start() {
     if (_started) return;
     _started = true;
-    AppStateEventNotifier.startListening();
-    AppStateEventNotifier.appStateStream.listen((state) async {
-      if (state == AppState.foreground) {
-        await _onForeground();
-      }
-    });
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _onForeground();
+    }
   }
 
   Future<void> _onForeground() async {
@@ -32,5 +34,9 @@ class AdLifecycleService {
     } finally {
       _isHandlingForeground = false;
     }
+  }
+
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
   }
 }

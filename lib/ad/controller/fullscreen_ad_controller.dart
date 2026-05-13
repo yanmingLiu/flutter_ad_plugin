@@ -6,9 +6,7 @@ import '../analytics/ad_event_reporter.dart';
 import '../config/ad_config_repository.dart';
 import '../core/ad_enums.dart';
 import '../core/ad_models.dart';
-import '../core/placement_capabilities.dart';
 import '../sdk/ad_adapter_registry.dart';
-import 'package:google_mobile_ads/google_mobile_ads.dart';
 import '../../tools/log_tool.dart';
 
 class FullscreenAdController {
@@ -27,14 +25,14 @@ class FullscreenAdController {
 
   void handleLateAd({
     required PlacementType placement,
-    required Ad ad,
+    required Object ad,
     required AdType type,
     required String adUnitId,
   }) {
     final current = _slots[placement];
     if (current?.hasAd == true) {
       log.d('📥 [late_load] discard: ${placement.name} (already has cache)');
-      ad.dispose();
+      _disposeRawAd(ad, AdSource.admob, type); // 默认 AdMob，实际应根据 source
       return;
     }
 
@@ -47,6 +45,12 @@ class FullscreenAdController {
       adUnitId: adUnitId,
       loadedAt: DateTime.now(),
     );
+  }
+
+  void _disposeRawAd(Object ad, AdSource source, AdType type) {
+    try {
+      adapterRegistry.get(source, type).dispose(ad);
+    } catch (_) {}
   }
 
   PlacementAdSlot? getSlot(PlacementType placement) => _slots[placement];
@@ -83,13 +87,14 @@ class FullscreenAdController {
 
     try {
       final config = await configRepository.getConfig();
+      final policy = config.getPolicy(placement);
       final timeout = Duration(seconds: config.loadTimeoutSeconds);
       final units =
           config
               .getUnits(placement)
               .where((unit) => unit.isValid)
               .where(
-                (unit) => PlacementCapabilities.supports(placement, unit.type),
+                (unit) => policy.supports(unit.type),
               )
               .toList()
             ..sort((a, b) => b.weight.compareTo(a.weight));
@@ -188,9 +193,7 @@ class FullscreenAdController {
     if (slot != null) {
       log.d('🗑️ [remove_slot] ${placement.name} (${slot.loadedType?.name})');
       if (slot.ad != null) {
-        adapterRegistry.get(slot.loadedSource!, slot.loadedType!).dispose(
-          slot.ad!,
-        );
+        _disposeRawAd(slot.ad!, slot.loadedSource!, slot.loadedType!);
       }
       _slots.remove(placement);
     }
@@ -209,7 +212,6 @@ class FullscreenAdController {
     final ad = slot.ad!;
     final source = slot.loadedSource!;
     final type = slot.loadedType!;
-    final adUnitId = slot.adUnitId!;
     final placementValue = placementLabel ?? placement.name;
 
     log.d('🚀 [show] use_cache: $placementValue type=${type.name}');

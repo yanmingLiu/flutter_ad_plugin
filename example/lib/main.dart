@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_ad_plugin/flutter_ad_plugin.dart';
-import 'package:google_mobile_ads/google_mobile_ads.dart';
 
 import 'integration_templates.dart';
 
@@ -10,10 +9,11 @@ Future<void> main() async {
     configRepository: MyConfigRepository(),
     eventReporter: MyAdEventReporter(),
   );
-  // 预加载开屏广告和首页原生广告
+  // 预加载
   await FlutterAdPlugin.preload(PlacementType.open);
-  await FlutterAdPlugin.loadNative(PlacementType.home);
-  
+  FlutterAdPlugin.loadNative(PlacementType.home);
+  FlutterAdPlugin.loadNative(PlacementType.message);
+
   runApp(const FlutterAdPluginApp());
 }
 
@@ -52,7 +52,7 @@ class _LaunchGatePageState extends State<LaunchGatePage> {
   Future<void> _enterApp() async {
     // 展示开屏广告
     await FlutterAdPlugin.show(PlacementType.open);
-    
+
     if (!mounted) return;
     Navigator.of(context).pushReplacement(
       MaterialPageRoute(builder: (_) => const AdDemoHomePage()),
@@ -61,9 +61,7 @@ class _LaunchGatePageState extends State<LaunchGatePage> {
 
   @override
   Widget build(BuildContext context) {
-    return const Scaffold(
-      body: Center(child: CircularProgressIndicator()),
-    );
+    return const Scaffold(body: Center(child: CircularProgressIndicator()));
   }
 }
 
@@ -75,7 +73,7 @@ class AdDemoHomePage extends StatefulWidget {
 }
 
 class _AdDemoHomePageState extends State<AdDemoHomePage> {
-  NativeAd? _nativeAd;
+  Object? _nativeAd;
   String _status = 'Ready';
 
   @override

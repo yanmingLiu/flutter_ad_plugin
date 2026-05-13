@@ -1,5 +1,3 @@
-import 'package:google_mobile_ads/google_mobile_ads.dart';
-
 import '../core/ad_enums.dart';
 
 abstract class AdSourceSdkInitializer {
@@ -33,20 +31,4 @@ class AdSdkInitializer {
   }
 
   bool supports(AdSource source) => _initializers.containsKey(source);
-}
-
-AdSdkInitializer createDefaultAdSdkInitializer() {
-  return AdSdkInitializer([
-    AdmobSdkInitializer(),
-  ]);
-}
-
-class AdmobSdkInitializer implements AdSourceSdkInitializer {
-  @override
-  AdSource get source => AdSource.admob;
-
-  @override
-  Future<void> init() async {
-    await MobileAds.instance.initialize();
-  }
 }

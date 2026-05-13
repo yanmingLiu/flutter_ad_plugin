@@ -1,5 +1,4 @@
 import 'package:flutter/widgets.dart';
-import 'package:google_mobile_ads/google_mobile_ads.dart';
 
 import 'ad/analytics/ad_event_reporter.dart';
 import 'ad/config/ad_config_repository.dart';
@@ -51,11 +50,11 @@ class FlutterAdPlugin {
     return AdService.instance.loadNative(placement);
   }
 
-  static NativeAd? getNativeAd(PlacementType placement) {
+  static Object? getNativeAd(PlacementType placement) {
     return AdService.instance.getNativeAd(placement);
   }
 
-  static Future<NativeAd?> showNative(
+  static Future<Object?> showNative(
     PlacementType placement, {
     String? placementLabel,
   }) {
@@ -65,7 +64,7 @@ class FlutterAdPlugin {
     );
   }
 
-  static Widget nativeAdWidget({required NativeAd ad, double height = 280}) {
+  static Widget nativeAdWidget({required Object ad, double height = 280}) {
     return NativeAdView(ad: ad, height: height);
   }
 }

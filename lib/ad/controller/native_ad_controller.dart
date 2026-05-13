@@ -1,13 +1,10 @@
 import 'dart:async';
 
-import 'package:google_mobile_ads/google_mobile_ads.dart';
-
 import '../analytics/ad_event.dart';
 import '../analytics/ad_event_reporter.dart';
 import '../config/ad_config_repository.dart';
 import '../core/ad_enums.dart';
 import '../core/ad_models.dart';
-import '../core/placement_capabilities.dart';
 import '../sdk/ad_adapter_registry.dart';
 import '../../tools/log_tool.dart';
 
@@ -27,14 +24,14 @@ class NativeAdController {
 
   void handleLateAd({
     required PlacementType placement,
-    required Ad ad,
+    required Object ad,
     required AdType type,
     required String adUnitId,
   }) {
     final current = _slots[placement];
     if (current?.hasAd == true) {
       log.d('📥 [late_load] discard: native:${placement.name}');
-      ad.dispose();
+      _disposeRawAd(ad, AdSource.admob, type);
       return;
     }
 
@@ -47,6 +44,12 @@ class NativeAdController {
       adUnitId: adUnitId,
       loadedAt: DateTime.now(),
     );
+  }
+
+  void _disposeRawAd(Object ad, AdSource source, AdType type) {
+    try {
+      adapterRegistry.get(source, type).dispose(ad);
+    } catch (_) {}
   }
 
   Future<bool> preload(PlacementType placement) async {
@@ -63,13 +66,14 @@ class NativeAdController {
     log.d('📥 [preload] start: native:${placement.name}');
     _slots[placement] = PlacementAdSlot(placement: placement, isLoading: true);
     final config = await configRepository.getConfig();
+    final policy = config.getPolicy(placement);
     final timeout = Duration(seconds: config.loadTimeoutSeconds);
     final units =
         config
             .getUnits(placement)
             .where((unit) => unit.isValid)
             .where(
-              (unit) => PlacementCapabilities.supports(placement, unit.type),
+              (unit) => policy.supports(unit.type),
             )
             .toList()
           ..sort((a, b) => b.weight.compareTo(a.weight));
@@ -113,7 +117,7 @@ class NativeAdController {
           adUnitId: unit.id,
           loadedAt: DateTime.now(),
         );
-        _scheduleRefresh(placement);
+        _scheduleRefresh(placement, unit.refreshMinutes);
         reporter.report(
           AdEvent(
             eventType: AdEventType.loadSucceeded,
@@ -135,16 +139,16 @@ class NativeAdController {
     return false;
   }
 
-  NativeAd? getAd(PlacementType placement) {
-    return _slots[placement]?.ad as NativeAd?;
+  Object? getAd(PlacementType placement) {
+    return _slots[placement]?.ad;
   }
 
-  Future<NativeAd?> show(
+  Future<Object?> show(
     PlacementType placement, {
     String? placementLabel,
   }) async {
     final slot = _slots[placement];
-    final ad = slot?.ad as NativeAd?;
+    final ad = slot?.ad;
     final adUnitId = slot?.adUnitId ?? '';
     final placementValue = placementLabel ?? placement.name;
 
@@ -208,11 +212,7 @@ class NativeAdController {
     if (slot?.ad != null &&
         slot?.loadedType != null &&
         slot?.loadedSource != null) {
-      final adapter = adapterRegistry.get(
-        slot!.loadedSource!,
-        slot.loadedType!,
-      );
-      adapter.dispose(slot.ad!);
+      _disposeRawAd(slot!.ad!, slot.loadedSource!, slot.loadedType!);
     }
   }
 
@@ -222,10 +222,11 @@ class NativeAdController {
     }
   }
 
-  void _scheduleRefresh(PlacementType placement) {
+  void _scheduleRefresh(PlacementType placement, int? refreshMinutes) {
     _refreshTimers.remove(placement)?.cancel();
-    log.d('⏳ [refresh] schedule: native:${placement.name} (40m)');
-    _refreshTimers[placement] = Timer(const Duration(minutes: 40), () {
+    final minutes = refreshMinutes ?? 40;
+    log.d('⏳ [refresh] schedule: native:${placement.name} (${minutes}m)');
+    _refreshTimers[placement] = Timer(Duration(minutes: minutes), () {
       log.d('⏳ [refresh] trigger: native:${placement.name}');
       clear(placement);
       preload(placement);

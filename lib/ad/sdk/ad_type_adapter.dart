@@ -1,12 +1,11 @@
 import 'package:flutter/foundation.dart';
-import 'package:google_mobile_ads/google_mobile_ads.dart';
 
 import '../analytics/ad_event_reporter.dart';
 import '../core/ad_config.dart';
 import '../core/ad_enums.dart';
 import '../core/ad_models.dart';
 
-abstract class AdTypeAdapter<TAd extends Ad> {
+abstract class AdTypeAdapter<TAd extends Object> {
   AdSource get source;
   AdType get type;
 

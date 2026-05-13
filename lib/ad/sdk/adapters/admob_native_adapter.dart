@@ -43,10 +43,14 @@ class AdmobNativeAdapter implements AdTypeAdapter<NativeAd> {
       }
     });
 
+    final templateType = unit.templateType?.toLowerCase() == 'small' 
+        ? TemplateType.small 
+        : TemplateType.medium;
+
     final ad = NativeAd(
       adUnitId: unit.id,
       nativeTemplateStyle: NativeTemplateStyle(
-        templateType: TemplateType.medium,
+        templateType: templateType,
       ),
       request: const AdRequest(),
       listener: NativeAdListener(
