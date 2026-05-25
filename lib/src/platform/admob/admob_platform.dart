@@ -136,6 +136,7 @@ class AdmobOpenAdapter implements AdTypeAdapter {
       onAdDismissedFullScreenContent: (ad) {
         ad.dispose();
         onClosed?.call();
+        if (!completer.isCompleted) completer.complete(AdShowResult.success());
         reporter.report(
           AdEvent(
             eventType: AdEventType.close,
@@ -165,7 +166,6 @@ class AdmobOpenAdapter implements AdTypeAdapter {
       },
     );
     await appOpenAd.show();
-    if (!completer.isCompleted) completer.complete(AdShowResult.success());
     return completer.future;
   }
 
@@ -286,6 +286,7 @@ class AdmobInterstitialAdapter implements AdTypeAdapter {
       onAdDismissedFullScreenContent: (ad) {
         ad.dispose();
         onClosed?.call();
+        if (!completer.isCompleted) completer.complete(AdShowResult.success());
         reporter.report(
           AdEvent(
             eventType: AdEventType.close,
@@ -315,7 +316,6 @@ class AdmobInterstitialAdapter implements AdTypeAdapter {
       },
     );
     await interstitialAd.show();
-    if (!completer.isCompleted) completer.complete(AdShowResult.success());
     return completer.future;
   }
 
@@ -438,6 +438,9 @@ class AdmobRewardedAdapter implements AdTypeAdapter {
       onAdDismissedFullScreenContent: (ad) {
         ad.dispose();
         onClosed?.call();
+        if (!completer.isCompleted) {
+          completer.complete(AdShowResult.success(rewardEarned: rewardEarned));
+        }
         reporter.report(
           AdEvent(
             eventType: AdEventType.close,
@@ -488,9 +491,6 @@ class AdmobRewardedAdapter implements AdTypeAdapter {
       },
     );
 
-    if (!completer.isCompleted) {
-      completer.complete(AdShowResult.success(rewardEarned: rewardEarned));
-    }
     return completer.future;
   }
 
