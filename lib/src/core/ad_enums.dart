@@ -3,13 +3,6 @@ class PlacementType {
   final String name;
   const PlacementType(this.name);
 
-  static const open = PlacementType('open');
-  static const home = PlacementType('home');
-  static const message = PlacementType('message');
-  static const chatBack = PlacementType('chatBack');
-  static const chatSession = PlacementType('chatSession');
-  static const liveVideo = PlacementType('liveVideo');
-
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||

@@ -1,8 +1,8 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_remote_config/firebase_remote_config.dart';
-import 'package:flutter/foundation.dart';
 
 import '../utils/ad_logger.dart';
 import 'ad_enums.dart';
@@ -28,8 +28,23 @@ class AdConfig {
     return placements[placement] ?? const [];
   }
 
+  int cacheSizeFor(PlacementType placement, {int minimum = 1}) {
+    var size = minimum;
+    for (final unit in getUnits(placement)) {
+      if (unit.poolSize > size) {
+        size = unit.poolSize;
+      }
+    }
+    return size;
+  }
+
+  Duration loadTimeoutFor(AdUnitConfig unit) {
+    return Duration(seconds: unit.loadTimeoutSeconds ?? loadTimeoutSeconds);
+  }
+
   PlacementPolicy getPolicy(PlacementType placement) {
-    return policies[placement] ?? PlacementPolicy.defaultPolicy(placement);
+    return policies[placement] ??
+        PlacementPolicy.defaultPolicy(this, placement);
   }
 }
 
@@ -38,17 +53,23 @@ class AdUnitConfig {
   final int weight;
   final AdType type;
   final String id;
+  final String cacheKey;
   final String? templateType;
   final int? refreshMinutes;
+  final int? loadTimeoutSeconds;
+  final int poolSize;
 
   const AdUnitConfig({
     required this.source,
     required this.weight,
     required this.type,
     required this.id,
+    String? cacheKey,
     this.templateType,
     this.refreshMinutes,
-  });
+    this.loadTimeoutSeconds,
+    this.poolSize = 1,
+  }) : cacheKey = cacheKey ?? id;
 
   bool get isValid => id.isNotEmpty;
 }
@@ -72,14 +93,14 @@ class PlacementPolicy {
     this.allowedTypes,
   });
 
-  factory PlacementPolicy.defaultPolicy(PlacementType placement) {
-    final isFullscreen =
-        placement == PlacementType.open ||
-        placement.name.toLowerCase().contains('chat') ||
-        placement.name.toLowerCase().contains('video');
-
+  factory PlacementPolicy.defaultPolicy(
+    AdConfig config,
+    PlacementType placement,
+  ) {
     return PlacementPolicy(
-      isFullscreen: isFullscreen,
+      isFullscreen: config
+          .getUnits(placement)
+          .any((unit) => unit.type.isFullscreen),
       applySamePlacementCd: false,
       applyDifferentPlacementCd: false,
       contributesToGlobalCooldown: false,
@@ -127,8 +148,7 @@ class AdConfigParser {
           value
               .whereType<Map>()
               .map((item) => Map<String, dynamic>.from(item))
-              .map(_parseUnitOrNull)
-              .whereType<AdUnitConfig>()
+              .expand(_parseUnits)
               .toList()
             ..sort((a, b) => b.weight.compareTo(a.weight));
 
@@ -170,22 +190,68 @@ class AdConfigParser {
     );
   }
 
-  AdUnitConfig? _parseUnitOrNull(Map<String, dynamic> json) {
-    final id = (json['id'] as String?)?.trim() ?? '';
+  Iterable<AdUnitConfig> _parseUnits(Map<String, dynamic> json) sync* {
+    final ids = _parseAdUnitIds(json);
     final typeRaw = (json['type'] as String?)?.trim();
     final sourceRaw = (json['source'] as String?)?.trim();
-    if (id.isEmpty || typeRaw == null || sourceRaw == null) {
-      return null;
+    if (ids.isEmpty || typeRaw == null || sourceRaw == null) {
+      return;
     }
 
-    return AdUnitConfig(
-      source: AdSource(sourceRaw),
-      weight: (json['weight'] as num?)?.toInt() ?? 0,
-      type: AdType(typeRaw),
-      id: id,
-      templateType: json['template_type'] as String?,
-      refreshMinutes: (json['refresh_minutes'] as num?)?.toInt(),
-    );
+    for (var index = 0; index < ids.length; index++) {
+      final id = ids[index];
+      yield AdUnitConfig(
+        source: AdSource(sourceRaw),
+        weight: (json['weight'] as num?)?.toInt() ?? 0,
+        type: AdType(typeRaw),
+        id: id,
+        cacheKey: '${sourceRaw}_${typeRaw}_${index}_$id',
+        templateType: json['template_type'] as String?,
+        refreshMinutes: (json['refresh_minutes'] as num?)?.toInt(),
+        loadTimeoutSeconds: (json['load_timeout'] as num?)?.toInt(),
+        poolSize: ids.length,
+      );
+    }
+  }
+
+  List<String> _parseAdUnitIds(Map<String, dynamic> json) {
+    final ids = <String>[];
+
+    void addId(Object? value) {
+      if (value is! String) {
+        return;
+      }
+      final id = value.trim();
+      if (id.isNotEmpty) {
+        ids.add(id);
+      }
+    }
+
+    addId(json['id']);
+
+    final idsRaw = json['ids'];
+    if (idsRaw is List) {
+      for (final id in idsRaw) {
+        addId(id);
+      }
+    }
+
+    final numberedKeys =
+        json.keys
+            .whereType<String>()
+            .where((key) => RegExp(r'^id\d+$').hasMatch(key))
+            .toList()
+          ..sort((a, b) {
+            final aIndex = int.tryParse(a.substring(2)) ?? 0;
+            final bIndex = int.tryParse(b.substring(2)) ?? 0;
+            return aIndex.compareTo(bIndex);
+          });
+
+    for (final key in numberedKeys) {
+      addId(json[key]);
+    }
+
+    return ids;
   }
 
   PlacementPolicy _parsePolicy(
@@ -223,69 +289,21 @@ abstract class AdConfigRepository {
 }
 
 class DefaultAdConfigRepository implements AdConfigRepository {
-  DefaultAdConfigRepository({AdConfigParser? parser})
-    : _parser = parser ?? AdConfigParser();
+  DefaultAdConfigRepository({
+    AdConfigParser? parser,
+    Map<String, dynamic> localConfig = const <String, dynamic>{},
+    String? localConfigJson,
+    String remoteConfigKey = _defaultRemoteConfigKey,
+  }) : _parser = parser ?? AdConfigParser(),
+       _localConfig = _parseLocalConfig(localConfig, localConfigJson),
+       _remoteConfigKey = remoteConfigKey;
 
-  static const _remoteConfigKey = 'ad_config_json';
-
-  static const Map<String, dynamic> _devConfig = {
-    'load_timeout': 7,
-    'same_placement_cd': 30,
-    'different_placement_cd': 30,
-    'open': [
-      {
-        'source': 'admob',
-        'weight': 3,
-        'type': 'open',
-        'id': 'ca-app-pub-3940256099942544/5575463023',
-      },
-      {
-        'source': 'admob',
-        'weight': 2,
-        'type': 'interstitial',
-        'id': 'ca-app-pub-3940256099942544/4411468910',
-      },
-      {
-        'source': 'admob',
-        'weight': 1,
-        'type': 'rewarded',
-        'id': 'ca-app-pub-3940256099942544/1712485313',
-      },
-    ],
-    'home': [
-      {
-        'source': 'admob',
-        'weight': 1,
-        'type': 'native',
-        'id': 'ca-app-pub-3940256099942544/1044960115',
-      },
-    ],
-    'message': [
-      {
-        'source': 'admob',
-        'weight': 2,
-        'type': 'interstitial',
-        'id': 'ca-app-pub-3940256099942544/4411468910',
-      },
-      {
-        'source': 'admob',
-        'weight': 3,
-        'type': 'rewarded',
-        'id': 'ca-app-pub-3940256099942544/1712485313',
-      },
-    ],
-    'placement_policy': {
-      'open': {
-        'apply_same_placement_cd': true,
-        'apply_different_placement_cd': true,
-        'contributes_to_global_cooldown': true,
-      }
-    }
-  };
-
-  static const Map<String, dynamic> _prodConfig = _devConfig; // 这里简化了，实际可根据需要区分
+  static const _defaultRemoteConfigKey = 'ad_config_json';
 
   final AdConfigParser _parser;
+  final Map<String, dynamic> _localConfig;
+  final String _remoteConfigKey;
+  StreamSubscription<RemoteConfigUpdate>? _remoteConfigSubscription;
   AdConfig? _cached;
 
   @override
@@ -293,24 +311,115 @@ class DefaultAdConfigRepository implements AdConfigRepository {
     return _cached ??= await _loadConfig();
   }
 
+  static Map<String, dynamic> _parseLocalConfig(
+    Map<String, dynamic> localConfig,
+    String? localConfigJson,
+  ) {
+    final rawJson = localConfigJson?.trim();
+    if (rawJson == null || rawJson.isEmpty) {
+      return Map<String, dynamic>.from(localConfig);
+    }
+
+    final decoded = jsonDecode(rawJson);
+    return Map<String, dynamic>.from(decoded is Map ? decoded : {});
+  }
+
   Future<AdConfig> _loadConfig() async {
     log.d('⚙️ [config] loading');
     if (Firebase.apps.isNotEmpty) {
-      final remoteJson = FirebaseRemoteConfig.instance.getString(
-        _remoteConfigKey,
+      final remoteConfig = FirebaseRemoteConfig.instance;
+      _startRemoteConfigListener(remoteConfig);
+      await _ensureRemoteInitialized(remoteConfig);
+
+      final remoteAdConfig = _parseRemoteConfig(
+        remoteConfig.getString(_remoteConfigKey),
       );
-      if (remoteJson.trim().isNotEmpty) {
-        try {
-          final decoded = jsonDecode(remoteJson);
-          return _parser.parse(
-            Map<String, dynamic>.from(decoded is Map ? decoded : {}),
-          );
-        } catch (e) {
-          log.e('❌ [config] parse_fail: $e');
-        }
+      if (remoteAdConfig != null) {
+        return remoteAdConfig;
       }
+
+      unawaited(_fetchAndCacheRemoteConfig(remoteConfig));
     }
-    const useDevConfig = kDebugMode || kProfileMode;
-    return _parser.parse(useDevConfig ? _devConfig : _prodConfig);
+
+    log.d('⚙️ [config] fallback_local');
+    return _parser.parse(Map<String, dynamic>.from(_localConfig));
+  }
+
+  Future<void> _ensureRemoteInitialized(
+    FirebaseRemoteConfig remoteConfig,
+  ) async {
+    try {
+      await remoteConfig.ensureInitialized();
+    } catch (e) {
+      log.e('❌ [config] remote_init_fail: $e');
+    }
+  }
+
+  Future<void> _fetchAndCacheRemoteConfig(
+    FirebaseRemoteConfig remoteConfig,
+  ) async {
+    try {
+      await remoteConfig.fetchAndActivate();
+      final remoteAdConfig = _parseRemoteConfig(
+        remoteConfig.getString(_remoteConfigKey),
+      );
+      if (remoteAdConfig != null) {
+        _cached = remoteAdConfig;
+        log.d('⚙️ [config] remote_cached');
+      }
+    } catch (e) {
+      log.e('❌ [config] remote_fetch_fail: $e');
+    }
+  }
+
+  void _startRemoteConfigListener(FirebaseRemoteConfig remoteConfig) {
+    if (_remoteConfigSubscription != null) {
+      return;
+    }
+
+    try {
+      _remoteConfigSubscription = remoteConfig.onConfigUpdated.listen(
+        (update) async {
+          if (!update.updatedKeys.contains(_remoteConfigKey)) {
+            return;
+          }
+
+          try {
+            await remoteConfig.activate();
+            final remoteAdConfig = _parseRemoteConfig(
+              remoteConfig.getString(_remoteConfigKey),
+            );
+            if (remoteAdConfig != null) {
+              _cached = remoteAdConfig;
+              log.d('⚙️ [config] remote_updated');
+            }
+          } catch (e) {
+            log.e('❌ [config] remote_update_fail: $e');
+          }
+        },
+        onError: (Object e) {
+          log.e('❌ [config] remote_listener_error: $e');
+        },
+      );
+    } catch (e) {
+      log.e('❌ [config] remote_listener_fail: $e');
+    }
+  }
+
+  AdConfig? _parseRemoteConfig(String rawJson) {
+    if (rawJson.trim().isEmpty) {
+      log.d('⚙️ [config] remote_empty');
+      return null;
+    }
+
+    try {
+      final decoded = jsonDecode(rawJson);
+      return _parser.parse(
+        Map<String, dynamic>.from(decoded is Map ? decoded : {}),
+      );
+    } catch (e) {
+      log.e('❌ [config] remote_parse_fail: $e');
+      return null;
+    }
   }
 }

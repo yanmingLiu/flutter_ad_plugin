@@ -5,6 +5,10 @@ import 'integration_templates.dart';
 
 import 'utils/facebook_util.dart';
 
+const openPlacement = PlacementType('open');
+const homePlacement = PlacementType('home');
+const messagePlacement = PlacementType('message');
+
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
@@ -60,8 +64,8 @@ class _LaunchGatePageState extends State<LaunchGatePage> {
   }
 
   Future<void> _enterApp() async {
-    // 展示开屏广告
-    await FlutterAdPlugin.show(PlacementType.open);
+    // 冷启动开屏广告
+    await FlutterAdPlugin.show(openPlacement, eventName: 'open_cold');
 
     if (!mounted) return;
     Navigator.of(context).pushReplacement(
@@ -84,6 +88,7 @@ class AdDemoHomePage extends StatefulWidget {
 
 class _AdDemoHomePageState extends State<AdDemoHomePage> {
   Object? _nativeAd;
+  List<Object> _nativeAds = const [];
   String _status = 'Ready';
 
   @override
@@ -94,33 +99,37 @@ class _AdDemoHomePageState extends State<AdDemoHomePage> {
 
   Future<void> _initNativeAd() async {
     // 优先尝试获取已加载的
-    var ad = FlutterAdPlugin.getNativeAd(PlacementType.home);
+    var ad = FlutterAdPlugin.getNativeAd(homePlacement);
     if (ad == null) {
       setState(() => _status = 'Waiting for native ad...');
       // 如果还没加载好，则发起加载并等待（引擎已优化，此处会挂载到 init 时的预加载任务上）
-      await FlutterAdPlugin.loadNative(PlacementType.home);
-      ad = FlutterAdPlugin.getNativeAd(PlacementType.home);
+      await FlutterAdPlugin.loadNative(homePlacement, eventName: 'first_load');
+      ad = FlutterAdPlugin.getNativeAd(homePlacement);
     }
 
     if (mounted) {
+      final ads = FlutterAdPlugin.getNativeAds(homePlacement);
       setState(() {
         _nativeAd = ad;
+        _nativeAds = ads;
         _status = ad == null ? 'Native ad load failed' : 'Native ad ready';
       });
     }
   }
 
   Future<void> _showFullscreen(PlacementType placement) async {
+    final eventName = placement == openPlacement ? 'open_hot' : null;
     setState(() => _status = 'Showing ${placement.name}...');
-    final shown = await FlutterAdPlugin.show(placement);
+    final shown = await FlutterAdPlugin.show(placement, eventName: eventName);
     setState(() => _status = shown ? 'Ad closed' : 'No ad was shown');
   }
 
   Future<void> _reloadNative() async {
     setState(() => _status = 'Loading native ad...');
-    await FlutterAdPlugin.loadNative(PlacementType.home);
+    await FlutterAdPlugin.loadNative(homePlacement);
     setState(() {
-      _nativeAd = FlutterAdPlugin.getNativeAd(PlacementType.home);
+      _nativeAd = FlutterAdPlugin.getNativeAd(homePlacement);
+      _nativeAds = FlutterAdPlugin.getNativeAds(homePlacement);
       _status = _nativeAd == null ? 'Native ad unavailable' : 'Native ad ready';
     });
   }
@@ -147,12 +156,12 @@ class _AdDemoHomePageState extends State<AdDemoHomePage> {
               runSpacing: 8,
               children: [
                 FilledButton.icon(
-                  onPressed: () => _showFullscreen(PlacementType.open),
+                  onPressed: () => _showFullscreen(openPlacement),
                   icon: const Icon(Icons.open_in_full),
                   label: const Text('Open Ad'),
                 ),
                 FilledButton.tonalIcon(
-                  onPressed: () => _showFullscreen(PlacementType.message),
+                  onPressed: () => _showFullscreen(messagePlacement),
                   icon: const Icon(Icons.chat_bubble_outline),
                   label: const Text('Interstitial'),
                 ),
@@ -166,7 +175,14 @@ class _AdDemoHomePageState extends State<AdDemoHomePage> {
             const SizedBox(height: 12),
             Text('Status: $_status', style: textTheme.labelLarge),
             const SizedBox(height: 16),
-            if (_nativeAd == null)
+            if (_nativeAds.length >= 2) ...[
+              Text('Dual native ad', style: textTheme.titleMedium),
+              const SizedBox(height: 8),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: DualNativeAdView(ads: _nativeAds, height: 560),
+              ),
+            ] else if (_nativeAd == null)
               const _EmptyNativeAd()
             else
               ClipRRect(

@@ -2,11 +2,13 @@ import 'ad_enums.dart';
 
 class PlacementAdSlot {
   final PlacementType placement;
+
   /// 原始广告对象（可以是 AdMob 的 Ad，也可以是 MAX 的 Ad 对象）
   final Object? ad;
   final AdSource? loadedSource;
   final AdType? loadedType;
   final String? adUnitId;
+  final String? cacheKey;
   final DateTime? loadedAt;
   final bool isLoading;
   final Object? lastError;
@@ -17,34 +19,34 @@ class PlacementAdSlot {
     this.loadedSource,
     this.loadedType,
     this.adUnitId,
+    this.cacheKey,
     this.loadedAt,
     this.isLoading = false,
     this.lastError,
   });
 
   bool get hasAd => ad != null;
+}
 
-  PlacementAdSlot copyWith({
-    Object? ad,
-    AdSource? loadedSource,
-    AdType? loadedType,
-    String? adUnitId,
-    DateTime? loadedAt,
-    bool? isLoading,
-    Object? lastError,
-    bool clearAd = false,
-  }) {
-    return PlacementAdSlot(
-      placement: placement,
-      ad: clearAd ? null : (ad ?? this.ad),
-      loadedSource: clearAd ? null : (loadedSource ?? this.loadedSource),
-      loadedType: clearAd ? null : (loadedType ?? this.loadedType),
-      adUnitId: clearAd ? null : (adUnitId ?? this.adUnitId),
-      loadedAt: clearAd ? null : (loadedAt ?? this.loadedAt),
-      isLoading: isLoading ?? this.isLoading,
-      lastError: lastError ?? this.lastError,
-    );
-  }
+class PlacementAdPool {
+  final PlacementType placement;
+  final List<PlacementAdSlot> slots;
+  final bool isLoading;
+  final Object? lastError;
+
+  const PlacementAdPool({
+    required this.placement,
+    this.slots = const [],
+    this.isLoading = false,
+    this.lastError,
+  });
+
+  bool get hasAd => slots.isNotEmpty;
+  int get count => slots.length;
+  Object? get firstAd => slots.isEmpty ? null : slots.first.ad;
+
+  List<Object> get ads =>
+      slots.map((slot) => slot.ad).whereType<Object>().toList();
 }
 
 class AdLoadResult<TAd extends Object> {

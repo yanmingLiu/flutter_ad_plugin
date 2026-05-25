@@ -26,6 +26,7 @@ class AdEvent {
   final int? errorCode;
   final String? errorReason;
   final DateTime timestamp;
+  final String? eventName;
 
   AdEvent({
     required this.eventType,
@@ -39,6 +40,7 @@ class AdEvent {
     this.errorCode,
     this.errorReason,
     required this.timestamp,
+    this.eventName,
   });
 }
 

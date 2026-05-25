@@ -36,6 +36,7 @@ class AdmobOpenAdapter implements AdTypeAdapter {
     required AdUnitConfig unit,
     required Duration timeout,
     required AdEventReporter reporter,
+    String? eventName,
     void Function(Object ad, AdType type, String adUnitId)? onLateAdLoaded,
   }) async {
     log.d('📥 load:open:${placement.name} id=${unit.id}');
@@ -90,6 +91,7 @@ class AdmobOpenAdapter implements AdTypeAdapter {
   Future<AdShowResult> show({
     required PlacementType placement,
     String? placementLabel,
+    String? eventName,
     required Object ad,
     required AdEventReporter reporter,
     VoidCallback? onAdShowed,
@@ -109,6 +111,7 @@ class AdmobOpenAdapter implements AdTypeAdapter {
             source: source,
             adUnitId: ad.adUnitId,
             timestamp: DateTime.now(),
+            eventName: eventName,
           ),
         );
       },
@@ -126,6 +129,7 @@ class AdmobOpenAdapter implements AdTypeAdapter {
             errorCode: error.code,
             errorReason: error.message,
             timestamp: DateTime.now(),
+            eventName: eventName,
           ),
         );
       },
@@ -141,6 +145,7 @@ class AdmobOpenAdapter implements AdTypeAdapter {
             source: source,
             adUnitId: ad.adUnitId,
             timestamp: DateTime.now(),
+            eventName: eventName,
           ),
         );
       },
@@ -154,6 +159,7 @@ class AdmobOpenAdapter implements AdTypeAdapter {
             source: source,
             adUnitId: ad.adUnitId,
             timestamp: DateTime.now(),
+            eventName: eventName,
           ),
         );
       },
@@ -180,6 +186,7 @@ class AdmobInterstitialAdapter implements AdTypeAdapter {
     required AdUnitConfig unit,
     required Duration timeout,
     required AdEventReporter reporter,
+    String? eventName,
     void Function(Object ad, AdType type, String adUnitId)? onLateAdLoaded,
   }) async {
     log.d('📥 load:interstitial:${placement.name} id=${unit.id}');
@@ -234,6 +241,7 @@ class AdmobInterstitialAdapter implements AdTypeAdapter {
   Future<AdShowResult> show({
     required PlacementType placement,
     String? placementLabel,
+    String? eventName,
     required Object ad,
     required AdEventReporter reporter,
     VoidCallback? onAdShowed,
@@ -253,6 +261,7 @@ class AdmobInterstitialAdapter implements AdTypeAdapter {
             source: source,
             adUnitId: ad.adUnitId,
             timestamp: DateTime.now(),
+            eventName: eventName,
           ),
         );
       },
@@ -270,6 +279,7 @@ class AdmobInterstitialAdapter implements AdTypeAdapter {
             errorCode: error.code,
             errorReason: error.message,
             timestamp: DateTime.now(),
+            eventName: eventName,
           ),
         );
       },
@@ -285,6 +295,7 @@ class AdmobInterstitialAdapter implements AdTypeAdapter {
             source: source,
             adUnitId: ad.adUnitId,
             timestamp: DateTime.now(),
+            eventName: eventName,
           ),
         );
       },
@@ -298,6 +309,7 @@ class AdmobInterstitialAdapter implements AdTypeAdapter {
             source: source,
             adUnitId: ad.adUnitId,
             timestamp: DateTime.now(),
+            eventName: eventName,
           ),
         );
       },
@@ -324,6 +336,7 @@ class AdmobRewardedAdapter implements AdTypeAdapter {
     required AdUnitConfig unit,
     required Duration timeout,
     required AdEventReporter reporter,
+    String? eventName,
     void Function(Object ad, AdType type, String adUnitId)? onLateAdLoaded,
   }) async {
     log.d('📥 load:rewarded:${placement.name} id=${unit.id}');
@@ -378,6 +391,7 @@ class AdmobRewardedAdapter implements AdTypeAdapter {
   Future<AdShowResult> show({
     required PlacementType placement,
     String? placementLabel,
+    String? eventName,
     required Object ad,
     required AdEventReporter reporter,
     VoidCallback? onAdShowed,
@@ -399,6 +413,7 @@ class AdmobRewardedAdapter implements AdTypeAdapter {
             source: source,
             adUnitId: ad.adUnitId,
             timestamp: DateTime.now(),
+            eventName: eventName,
           ),
         );
       },
@@ -416,6 +431,7 @@ class AdmobRewardedAdapter implements AdTypeAdapter {
             errorCode: error.code,
             errorReason: error.message,
             timestamp: DateTime.now(),
+            eventName: eventName,
           ),
         );
       },
@@ -431,6 +447,7 @@ class AdmobRewardedAdapter implements AdTypeAdapter {
             source: source,
             adUnitId: ad.adUnitId,
             timestamp: DateTime.now(),
+            eventName: eventName,
           ),
         );
       },
@@ -444,6 +461,7 @@ class AdmobRewardedAdapter implements AdTypeAdapter {
             source: source,
             adUnitId: ad.adUnitId,
             timestamp: DateTime.now(),
+            eventName: eventName,
           ),
         );
       },
@@ -464,6 +482,7 @@ class AdmobRewardedAdapter implements AdTypeAdapter {
             source: source,
             adUnitId: ad.adUnitId,
             timestamp: DateTime.now(),
+            eventName: eventName,
           ),
         );
       },
@@ -492,6 +511,7 @@ class AdmobNativeAdapter implements AdTypeAdapter {
     required AdUnitConfig unit,
     required Duration timeout,
     required AdEventReporter reporter,
+    String? eventName,
     void Function(Object ad, AdType type, String adUnitId)? onLateAdLoaded,
   }) async {
     log.d('📥 load:native:${placement.name} id=${unit.id}');
@@ -556,6 +576,7 @@ class AdmobNativeAdapter implements AdTypeAdapter {
               source: source,
               adUnitId: unit.id,
               timestamp: DateTime.now(),
+              eventName: eventName,
             ),
           );
         },
@@ -573,6 +594,7 @@ class AdmobNativeAdapter implements AdTypeAdapter {
               revenue: valueMicros,
               currency: currencyCode,
               timestamp: DateTime.now(),
+              eventName: eventName,
             ),
           );
         },
@@ -586,6 +608,7 @@ class AdmobNativeAdapter implements AdTypeAdapter {
   Future<AdShowResult> show({
     required PlacementType placement,
     String? placementLabel,
+    String? eventName,
     required Object ad,
     required AdEventReporter reporter,
     VoidCallback? onAdShowed,
