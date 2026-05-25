@@ -1,13 +1,19 @@
 import 'ad_enums.dart';
 
+/// 广告缓存池中的单个广告槽位。
+///
+/// [cacheKey] 用于去重，由配置解析时根据 source + type + index + id 生成，
+/// 确保同一广告位配置多个 ID 时不会重复缓存同一个广告。
 class PlacementAdSlot {
   final PlacementType placement;
 
-  /// 原始广告对象（可以是 AdMob 的 Ad，也可以是 MAX 的 Ad 对象）
+  /// 原始广告对象（AdMob Ad / MAX Ad 等，类型抹平为 Object）
   final Object? ad;
   final AdSource? loadedSource;
   final AdType? loadedType;
   final String? adUnitId;
+
+  /// 唯一标识，用于防止重复缓存
   final String? cacheKey;
   final DateTime? loadedAt;
   final bool isLoading;
@@ -28,6 +34,10 @@ class PlacementAdSlot {
   bool get hasAd => ad != null;
 }
 
+/// 广告缓存池，一个 placement 可以缓存多个广告。
+///
+/// 当 JSON 中一个 placement 通过 id/id2/ids 配置了多个广告单元 ID 时，
+/// [slots] 会包含对应的多个 [PlacementAdSlot]。
 class PlacementAdPool {
   final PlacementType placement;
   final List<PlacementAdSlot> slots;
@@ -49,6 +59,7 @@ class PlacementAdPool {
       slots.map((slot) => slot.ad).whereType<Object>().toList();
 }
 
+/// 广告加载结果。
 class AdLoadResult<TAd extends Object> {
   final TAd? ad;
   final AdType type;
@@ -70,6 +81,10 @@ class AdLoadResult<TAd extends Object> {
   bool get isSuccess => ad != null;
 }
 
+/// 广告展示结果。
+///
+/// [shown] 表示是否成功展示。
+/// [rewardEarned] 仅激励广告有意义，表示用户是否完播获得奖励。
 class AdShowResult {
   final bool shown;
   final bool rewardEarned;

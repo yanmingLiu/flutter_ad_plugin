@@ -12,6 +12,23 @@ import '../utils/ad_logger.dart';
 import '../utils/ad_reporter.dart';
 import 'ad_guard.dart';
 
+/// 广告引擎核心控制器（单例）。
+///
+/// 负责：
+/// - 广告预加载与缓存管理（[PlacementAdPool]）
+/// - 全屏广告展示控制与 CD 守卫（[AdDisplayGuard]）
+/// - 原生广告加载与自动刷新
+/// - 埋点事件上报（[AdEventReporter]）
+///
+/// ## 多广告缓存
+/// JSON 中通过 id/id2/ids 配置多个广告单元 ID 时，
+/// [cacheSizeFor] 返回所有单元的 poolSize 最大值，
+/// [_performFullscreenLoad] 和 [_performNativeLoad] 会循环加载直到缓存池达到目标数量。
+///
+/// ## show() 的 await 行为
+/// [show] 会等待 adapter.show() 完成才返回，而 adapter.show()
+/// 的实现保证在用户关闭广告后才 complete。因此连续两次 await show()
+/// 能实现"关闭一个再弹下一个"。
 class AdEngine {
   AdEngine._internal();
   static final AdEngine instance = AdEngine._internal();

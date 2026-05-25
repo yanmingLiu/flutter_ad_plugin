@@ -268,30 +268,34 @@ await FlutterAdPlugin.preload(openPlacement, eventName: 'open_cold');
 final shown = await FlutterAdPlugin.show(openPlacement, eventName: 'open_cold');
 ```
 
+> `show()` 会阻塞直到用户关闭广告（或展示失败）才返回。冷启动开屏应放在启动页 `initState` 中 await，确保广告关闭后再进入主页。
+
 #### 连续展示多个全屏广告
 
-给一个 placement 配置多个全屏类型（如 `interstitial` + `rewarded`），引擎会按权重分别缓存。连续调用 `show()` 即可逐个弹出：
+一个 placement 通过 `id`/`id2` 配置多个同类型广告单元 ID 时，引擎会为展开的每个 ID 加载并缓存独立广告对象（`poolSize` = ID 数量）。`show()` 每次消费一个，等用户关闭后 `await` 返回，再调用下一个：
+
+```json
+"double_ad": [
+  { "source": "admob", "weight": 1, "type": "rewarded",
+    "id": "ca-app-pub-3940256099942544/1712485313",
+    "id2": "ca-app-pub-3940256099942544/6978759866" }
+]
+```
 
 ```dart
-// JSON 配置
-// "double_ad": [
-//   { "source": "admob", "weight": 1, "type": "interstitial", "id": "..." },
-//   { "source": "admob", "weight": 1, "type": "rewarded", "id": "..." }
-// ]
-
 const doubleAdPlacement = PlacementType('double_ad');
 final firstShown = await FlutterAdPlugin.show(
   doubleAdPlacement,
-  eventName: 'double_ad_interstitial',
+  eventName: 'double_ad_1',
 );
 if (!firstShown) return;
 await FlutterAdPlugin.show(
   doubleAdPlacement,
-  eventName: 'double_ad_rewarded',
+  eventName: 'double_ad_2',
 );
 ```
 
-> 每个 `show()` 消费一个缓存广告；两次调用对应配置中的两个候选类型。
+> 关键：`id2` 展开使 `poolSize=2`，引擎加载两个广告；`show()` 等待 dismiss 才返回，所以两次 await 自然形成"关闭→弹出"的序列。
 
 ### 4) 原生广告
 

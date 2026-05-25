@@ -7,6 +7,9 @@ import 'package:firebase_remote_config/firebase_remote_config.dart';
 import '../utils/ad_logger.dart';
 import 'ad_enums.dart';
 
+/// 广告配置的运行时模型，由 [AdConfigParser] 从 JSON 解析生成。
+///
+/// 所有广告行为（超时、CD、缓存数量、策略）均由本配置驱动。
 class AdConfig {
   final int loadTimeoutSeconds;
   final int samePlacementCdSeconds;

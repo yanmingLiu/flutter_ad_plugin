@@ -22,7 +22,12 @@ class AdmobSdkInitializer implements AdSourceSdkInitializer {
   }
 }
 
-/// AdMob 开屏广告适配器
+/// AdMob 开屏广告适配器。
+///
+/// show() 通过 Completer 实现：在 onAdShowedFullScreenContent 中上报展示成功，
+/// 但 completer 仅在 onAdDismissedFullScreenContent（用户关闭）或
+/// onAdFailedToShowFullScreenContent（展示失败）时 complete。
+/// 因此 await show() 会等到广告关闭后才返回。
 class AdmobOpenAdapter implements AdTypeAdapter {
   @override
   AdSource get source => AdSource.admob;
