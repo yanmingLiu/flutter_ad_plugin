@@ -28,6 +28,8 @@ Future<void> main() async {
     eventReporter: MyAdEventReporter(),
   );
 
+  FlutterAdPlugin.verboseLogging = true;
+
   // 初始化业务侧工具（如 Facebook SDK）
   try {
     await FacebookSDKUtil.initializeFacebookSDK(

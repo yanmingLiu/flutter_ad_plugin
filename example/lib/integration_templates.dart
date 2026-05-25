@@ -143,7 +143,9 @@ class MyAdEventReporter implements AdEventReporter {
   Future<void> report(AdEvent event) async {
     // debugPrint('🚀 [实现方] ${jsonEncode(event.toJson())}');
 
-    debugPrint('🚀 [实现方]: ${event.placement} ${event.eventName}');
+    debugPrint(
+      '🚀 [实现方]: placement: ${event.placement} eventName: ${event.eventName}...',
+    );
 
     // 示例：将广告收入上报至 Facebook
     // if (event.eventType == AdEventType.income && event.revenue != null) {
