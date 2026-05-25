@@ -98,6 +98,64 @@ await FlutterAdPlugin.loadNative(homePlacement, eventName: 'first_load');
 reporter 中通过 `event.eventName` 获取：
 ```dart
 print('event=${event.eventName}'); // 'open_cold' / 'open_hot' / 'cold_load' ...
+```
+
+### 热启动开屏（App 前后台切换）
+
+插件不再内置生命周期监听，宿主通过 AdMob `AppStateEventNotifier` 自行处理。
+
+参考 demo 中的 `AdLifecycle` 封装：
+
+```dart
+import 'dart:async';
+import 'package:google_mobile_ads/google_mobile_ads.dart';
+
+class AdLifecycle {
+  AdLifecycle({required this.onForeground});
+
+  final void Function() onForeground;
+  StreamSubscription<AppState>? _sub;
+
+  void start() {
+    AppStateEventNotifier.startListening();
+    _sub = AppStateEventNotifier.appStateStream.listen((state) {
+      if (state == AppState.foreground) {
+        onForeground();
+      }
+    });
+  }
+
+  void dispose() {
+    _sub?.cancel();
+    _sub = null;
+  }
+}
+```
+
+在页面中使用：
+
+```dart
+class HomePageState extends State<HomePage> {
+  late final AdLifecycle _lifecycle;
+
+  @override
+  void initState() {
+    super.initState();
+    _lifecycle = AdLifecycle(onForeground: () {
+      FlutterAdPlugin.show(openPlacement, eventName: 'open_hot');
+    });
+    _lifecycle.start();
+  }
+
+  @override
+  void dispose() {
+    _lifecycle.dispose();
+    super.dispose();
+  }
+}
+```
+
+> `AppStateEventNotifier` 能精准识别前后台切换，自动处理广告关闭导致的回弹问题（比 `WidgetsBindingObserver` 更准确）。`AdDisplayGuard` 内置 CD 冷却，频繁切换也不会重复展示。
 
 ---
 

@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_ad_plugin/flutter_ad_plugin.dart';
 
 import 'integration_templates.dart';
-
+import 'utils/ad_lifecycle.dart';
 import 'utils/facebook_util.dart';
 
 const openPlacement = PlacementType('open');
@@ -90,11 +90,23 @@ class _AdDemoHomePageState extends State<AdDemoHomePage> {
   Object? _nativeAd;
   List<Object> _nativeAds = const [];
   String _status = 'Ready';
+  late final AdLifecycle _lifecycle;
 
   @override
   void initState() {
     super.initState();
     _initNativeAd();
+
+    _lifecycle = AdLifecycle(onForeground: () {
+      _showFullscreen(openPlacement);
+    });
+    _lifecycle.start();
+  }
+
+  @override
+  void dispose() {
+    _lifecycle.dispose();
+    super.dispose();
   }
 
   Future<void> _initNativeAd() async {
