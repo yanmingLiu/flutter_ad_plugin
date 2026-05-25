@@ -148,8 +148,8 @@ class _AdDemoHomePageState extends State<AdDemoHomePage> {
   }
 
   Future<void> _showTwoAds() async {
-    // 连续展示两个全屏插屏广告：一个 placement 缓存 2 个广告，逐个弹出
-    setState(() => _status = 'Showing first interstitial...');
+    // 连续展示两个全屏激励广告：一个 placement 缓存 2 个广告，逐个弹出
+    setState(() => _status = 'Showing first rewarded...');
     final firstShown = await FlutterAdPlugin.show(
       doubleAdPlacement,
       eventName: 'double_ad_1',
@@ -158,7 +158,7 @@ class _AdDemoHomePageState extends State<AdDemoHomePage> {
       setState(() => _status = 'First ad failed, skipping second');
       return;
     }
-    setState(() => _status = 'Showing second interstitial...');
+    setState(() => _status = 'Showing second rewarded...');
     final secondShown = await FlutterAdPlugin.show(
       doubleAdPlacement,
       eventName: 'double_ad_2',
@@ -207,7 +207,7 @@ class _AdDemoHomePageState extends State<AdDemoHomePage> {
                 FilledButton.tonalIcon(
                   onPressed: _showTwoAds,
                   icon: const Icon(Icons.double_arrow),
-                  label: const Text('2 Interstitials'),
+                  label: const Text('2 Rewardeds'),
                 ),
               ],
             ),

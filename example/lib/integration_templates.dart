@@ -70,9 +70,9 @@ class MyConfigRepository extends DefaultAdConfigRepository {
         {
             "source": "admob",
             "weight": 1,
-            "type": "interstitial",
-            "id": "ca-app-pub-3940256099942544/4411468910",
-            "id2": "ca-app-pub-3940256099942544/4411468910"
+            "type": "rewarded",
+            "id": "ca-app-pub-3940256099942544/1712485313",
+            "id2": "ca-app-pub-3940256099942544/6978759866"
         }
     ]
 };
