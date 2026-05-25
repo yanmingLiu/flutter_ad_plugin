@@ -25,6 +25,10 @@ class MyConfigRepository extends DefaultAdConfigRepository {
         "message": {
             "show_not_ready_toast": true,
             "not_ready_msg": "Ad is still loading, please wait a moment."
+        },
+        "double_ad": {
+            "show_not_ready_toast": true,
+            "not_ready_msg": "Ad is still loading, please wait a moment."
         }
     },
     "open": [
@@ -47,9 +51,16 @@ class MyConfigRepository extends DefaultAdConfigRepository {
             "source": "admob",
             "weight": 1,
             "type": "native",
-            "id": "ca-app-pub-3940256099942544/1044960115",
-            "id2": "ca-app-pub-3940256099942544/2521693316",
+            "id": "ca-app-pub-3940256099942544/3986624511",
             "template_type": "medium",
+            "refresh_minutes": 20
+        },
+        {
+            "source": "admob",
+            "weight": 1,
+            "type": "native",
+            "id": "ca-app-pub-3940256099942544/2521693316",
+            "template_type": "small",
             "refresh_minutes": 20
         }
     ],
