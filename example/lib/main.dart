@@ -8,6 +8,7 @@ import 'utils/facebook_util.dart';
 const openPlacement = PlacementType('open');
 const homePlacement = PlacementType('home');
 const messagePlacement = PlacementType('message');
+const doubleAdPlacement = PlacementType('double_ad');
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -146,6 +147,27 @@ class _AdDemoHomePageState extends State<AdDemoHomePage> {
     });
   }
 
+  Future<void> _showTwoAds() async {
+    // 连续展示两个全屏广告：先插屏，关闭后再展示激励
+    setState(() => _status = 'Showing interstitial...');
+    final firstShown = await FlutterAdPlugin.show(
+      doubleAdPlacement,
+      eventName: 'double_ad_interstitial',
+    );
+    if (!firstShown) {
+      setState(() => _status = 'First ad failed, skipping second');
+      return;
+    }
+    setState(() => _status = 'Showing rewarded...');
+    final secondShown = await FlutterAdPlugin.show(
+      doubleAdPlacement,
+      eventName: 'double_ad_rewarded',
+    );
+    setState(
+      () => _status = secondShown ? 'Both ads shown' : 'Second ad failed',
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final textTheme = Theme.of(context).textTheme;
@@ -181,6 +203,11 @@ class _AdDemoHomePageState extends State<AdDemoHomePage> {
                   onPressed: _reloadNative,
                   icon: const Icon(Icons.refresh),
                   label: const Text('Reload Native'),
+                ),
+                FilledButton.tonalIcon(
+                  onPressed: _showTwoAds,
+                  icon: const Icon(Icons.double_arrow),
+                  label: const Text('2 Ads (Int + Rew)'),
                 ),
               ],
             ),

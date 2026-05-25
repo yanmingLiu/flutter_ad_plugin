@@ -268,6 +268,31 @@ await FlutterAdPlugin.preload(openPlacement, eventName: 'open_cold');
 final shown = await FlutterAdPlugin.show(openPlacement, eventName: 'open_cold');
 ```
 
+#### 连续展示多个全屏广告
+
+给一个 placement 配置多个全屏类型（如 `interstitial` + `rewarded`），引擎会按权重分别缓存。连续调用 `show()` 即可逐个弹出：
+
+```dart
+// JSON 配置
+// "double_ad": [
+//   { "source": "admob", "weight": 1, "type": "interstitial", "id": "..." },
+//   { "source": "admob", "weight": 1, "type": "rewarded", "id": "..." }
+// ]
+
+const doubleAdPlacement = PlacementType('double_ad');
+final firstShown = await FlutterAdPlugin.show(
+  doubleAdPlacement,
+  eventName: 'double_ad_interstitial',
+);
+if (!firstShown) return;
+await FlutterAdPlugin.show(
+  doubleAdPlacement,
+  eventName: 'double_ad_rewarded',
+);
+```
+
+> 每个 `show()` 消费一个缓存广告；两次调用对应配置中的两个候选类型。
+
 ### 4) 原生广告
 
 ```dart
