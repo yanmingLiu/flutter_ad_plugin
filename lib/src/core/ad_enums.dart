@@ -26,6 +26,7 @@ class AdType {
   static const interstitial = AdType('interstitial');
   static const rewarded = AdType('rewarded');
   static const native = AdType('native');
+  static const doubleNative = AdType('double_native');
 
   @override
   bool operator ==(Object other) =>
@@ -37,6 +38,10 @@ class AdType {
 
   bool get isFullscreen =>
       this == open || this == interstitial || this == rewarded;
+
+  bool get isNative => this == native || this == doubleNative;
+
+  bool get isDoubleNative => this == doubleNative;
 
   @override
   String toString() => name;

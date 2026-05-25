@@ -1,106 +1,160 @@
-import 'package:flutter_ad_plugin/flutter_ad_plugin.dart';
+import 'dart:io';
 
-import 'utils/facebook_util.dart';
+import 'package:flutter/widgets.dart';
+import 'package:flutter_ad_plugin/flutter_ad_plugin.dart';
 
 class MyConfigRepository extends DefaultAdConfigRepository {
   MyConfigRepository() : super(localConfig: localConfig);
 
-  // dart format off
-  static const Map<String, dynamic> localConfig = {
-    "load_timeout": 7,
-    "same_placement_cd": 30,
-    "different_placement_cd": 30,
-    "preload_list": [
-        "open",
-        "home",
-        "message",
-        "double_ad"
-    ],
-    "placement_policy": {
-        "open": {
-            "apply_same_placement_cd": true,
-            "apply_different_placement_cd": true,
-            "contributes_to_global_cooldown": true
+  static Map<String, dynamic> get localConfig {
+    final ids = _AdMobTestIds.current;
+    return {
+      'load_timeout': 7,
+      'same_placement_cd': 30,
+      'different_placement_cd': 30,
+      'common_placements': ['behavior', 'behavior2'],
+      'high_value_placement': 'level_h',
+      'placement_policy': {
+        'open': {
+          'apply_same_placement_cd': true,
+          'apply_different_placement_cd': true,
+          'contributes_to_global_cooldown': true,
+          'wait_for_load_on_show': true,
+          'prefer_high_value_on_show': false,
         },
-        "message": {
-            "show_not_ready_toast": true,
-            "not_ready_msg": "Ad is still loading, please wait a moment."
+        'message': {
+          'wait_for_load_on_show': true,
+          'show_not_ready_toast': true,
+          'not_ready_msg': 'Ad is still loading, please wait a moment.',
         },
-        "double_ad": {
-            "show_not_ready_toast": true,
-            "not_ready_msg": "Ad is still loading, please wait a moment."
-        }
-    },
-    "open": [
+      },
+      'open': [
+        {'source': 'admob', 'weight': 3, 'type': 'open', 'id': ids.open},
         {
-            "source": "admob",
-            "weight": 3,
-            "type": "open",
-            "id": "ca-app-pub-3940256099942544/5575463023",
-            "id2": "ca-app-pub-3940256099942544/4411468910"
+          'source': 'admob',
+          'weight': 2,
+          'type': 'interstitial',
+          'id': ids.interstitial,
+        },
+      ],
+      'home': [
+        {
+          'source': 'admob',
+          'weight': 1,
+          'type': 'native',
+          'id': ids.native,
+          'id2': ids.nativeVideo,
+          'template_type': 'medium',
+          'refresh_minutes': 20,
+        },
+      ],
+      'message': [
+        {
+          'source': 'admob',
+          'weight': 2,
+          'type': 'interstitial',
+          'id': ids.interstitial,
+          'load_timeout': 15,
+        },
+      ],
+      'behavior': [
+        {
+          'ad_source': 'admob',
+          'ad_weight': 1,
+          'ad_type': 'interstitial',
+          'ad_id': ids.interstitial,
+        },
+      ],
+      'behavior2': [
+        {
+          'ad_source': 'admob',
+          'ad_weight': 1,
+          'ad_type': 'rewarded',
+          'ad_id': ids.rewarded,
+        },
+      ],
+      'level_h': [
+        {
+          'ad_source': 'admob',
+          'ad_weight': 1,
+          'ad_type': 'interstitial',
+          'ad_id': ids.interstitial,
+        },
+      ],
+      'play_middle': [
+        {
+          'ad_source': 'admob',
+          'ad_weight': 2,
+          'ad_type': 'interstitial',
+          'ad_id': ids.interstitial,
         },
         {
-            "source": "admob",
-            "weight": 2,
-            "type": "interstitial",
-            "id": "ca-app-pub-3940256099942544/4411468910"
-        }
-    ],
-    "home": [
-        {
-            "source": "admob",
-            "weight": 1,
-            "type": "native",
-            "id": "ca-app-pub-3940256099942544/3986624511",
-            "id2": "ca-app-pub-3940256099942544/2521693316",
-            "template_type": "medium",
-            "refresh_minutes": 20
-        }
-    ],
-    "message": [
-        {
-            "source": "admob",
-            "weight": 2,
-            "type": "interstitial",
-            "id": "ca-app-pub-3940256099942544/4411468910",
-            "load_timeout": 15
-        }
-    ],
-    "double_ad": [
-        {
-            "source": "admob",
-            "weight": 1,
-            "type": "rewarded",
-            "id": "ca-app-pub-3940256099942544/1712485313",
-            "id2": "ca-app-pub-3940256099942544/6978759866"
-        }
-    ]
-};
+          'ad_source': 'admob',
+          'ad_weight': 1,
+          'ad_type': 'double_native',
+          'ad_id': ids.native,
+          'ad_id2': ids.nativeVideo,
+        },
+      ],
+    };
+  }
 
   static String get remoteConfigKey => 'ad_config_json';
 }
-// dart format on
+
+class _AdMobTestIds {
+  const _AdMobTestIds({
+    required this.open,
+    required this.interstitial,
+    required this.rewarded,
+    required this.native,
+    required this.nativeVideo,
+  });
+
+  final String open;
+  final String interstitial;
+  final String rewarded;
+  final String native;
+  final String nativeVideo;
+
+  static _AdMobTestIds get current {
+    return Platform.isAndroid ? android : ios;
+  }
+
+  static const android = _AdMobTestIds(
+    open: 'ca-app-pub-3940256099942544/9257395921',
+    interstitial: 'ca-app-pub-3940256099942544/1033173712',
+    rewarded: 'ca-app-pub-3940256099942544/5224354917',
+    native: 'ca-app-pub-3940256099942544/2247696110',
+    nativeVideo: 'ca-app-pub-3940256099942544/1044960115',
+  );
+
+  static const ios = _AdMobTestIds(
+    open: 'ca-app-pub-3940256099942544/5575463023',
+    interstitial: 'ca-app-pub-3940256099942544/4411468910',
+    rewarded: 'ca-app-pub-3940256099942544/1712485313',
+    native: 'ca-app-pub-3940256099942544/3986624511',
+    nativeVideo: 'ca-app-pub-3940256099942544/2521693316',
+  );
+}
 
 class MyAdEventReporter implements AdEventReporter {
   @override
   Future<void> report(AdEvent event) async {
-    final eventNameStr = event.eventName != null
-        ? ' event=${event.eventName}'
-        : '';
-    // ignore: avoid_print
-    print(
-      '[my-ad-event] type=${event.eventType.name} placement=${event.placement} unit=${event.adUnitId}$eventNameStr',
-    );
+    // debugPrint('🚀 [实现方] ${jsonEncode(event.toJson())}');
+
+    debugPrint('🚀 [实现方]: ${event.placement} ${event.eventName}');
 
     // 示例：将广告收入上报至 Facebook
-    if (event.eventType == AdEventType.income && event.revenue != null) {
-      FacebookSDKUtil.logAdImpression(
-        value: event.revenue!,
-        currency: event.currency ?? 'USD',
-        adType: event.adType.name,
-        adSource: event.source.name,
-        adUnitId: event.adUnitId,
-      );
-    }
+    // if (event.eventType == AdEventType.income && event.revenue != null) {
+    //   FacebookSDKUtil.logAdImpression(
+    //     value: event.revenue!,
+    //     currency: event.currency ?? 'USD',
+    //     adType: event.adType.name,
+    //     adScreen: event.eventName,
+    //     adSource: event.source.name,
+    //     adUnitId: event.adUnitId,
+    //   );
+    // }
   }
 }

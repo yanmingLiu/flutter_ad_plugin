@@ -1,5 +1,17 @@
 import 'ad_enums.dart';
 
+class NativeAdAttribution {
+  NativeAdAttribution({
+    required this.placement,
+    this.placementLabel,
+    required this.eventName,
+  });
+
+  PlacementType placement;
+  String? placementLabel;
+  String eventName;
+}
+
 /// 广告缓存池中的单个广告槽位。
 ///
 /// [cacheKey] 用于去重，由配置解析时根据 source + type + index + id 生成，
@@ -16,6 +28,7 @@ class PlacementAdSlot {
   /// 唯一标识，用于防止重复缓存
   final String? cacheKey;
   final DateTime? loadedAt;
+  final NativeAdAttribution? nativeAttribution;
   final bool isLoading;
   final Object? lastError;
 
@@ -27,6 +40,7 @@ class PlacementAdSlot {
     this.adUnitId,
     this.cacheKey,
     this.loadedAt,
+    this.nativeAttribution,
     this.isLoading = false,
     this.lastError,
   });
@@ -84,20 +98,14 @@ class AdLoadResult<TAd extends Object> {
 /// 广告展示结果。
 ///
 /// [shown] 表示是否成功展示。
-/// [rewardEarned] 仅激励广告有意义，表示用户是否完播获得奖励。
 class AdShowResult {
   final bool shown;
-  final bool rewardEarned;
   final Object? error;
 
-  const AdShowResult({
-    required this.shown,
-    this.rewardEarned = false,
-    this.error,
-  });
+  const AdShowResult({required this.shown, this.error});
 
-  factory AdShowResult.success({bool rewardEarned = false}) {
-    return AdShowResult(shown: true, rewardEarned: rewardEarned);
+  factory AdShowResult.success() {
+    return const AdShowResult(shown: true);
   }
 
   factory AdShowResult.failure([Object? error]) {

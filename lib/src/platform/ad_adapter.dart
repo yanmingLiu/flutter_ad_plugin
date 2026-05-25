@@ -26,7 +26,7 @@ abstract class AdTypeAdapter {
     required AdUnitConfig unit,
     required Duration timeout,
     required AdEventReporter reporter,
-    String? eventName,
+    required String eventName,
     void Function(Object ad, AdType type, String adUnitId)? onLateAdLoaded,
   });
 
@@ -37,7 +37,7 @@ abstract class AdTypeAdapter {
   Future<AdShowResult> show({
     required PlacementType placement,
     String? placementLabel,
-    String? eventName,
+    required String eventName,
     required Object ad,
     required AdEventReporter reporter,
     VoidCallback? onAdShowed,

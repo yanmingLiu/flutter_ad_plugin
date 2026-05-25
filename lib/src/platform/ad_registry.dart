@@ -8,9 +8,9 @@ abstract class AdSourceSdkInitializer {
 
 class AdSdkInitializer {
   AdSdkInitializer(List<AdSourceSdkInitializer> initializers)
-      : _initializers = {
-          for (final initializer in initializers) initializer.source: initializer,
-        };
+    : _initializers = {
+        for (final initializer in initializers) initializer.source: initializer,
+      };
 
   final Map<AdSource, AdSourceSdkInitializer> _initializers;
 
@@ -23,7 +23,9 @@ class AdSdkInitializer {
   Future<void> initSource(AdSource source) async {
     final initializer = _initializers[source];
     if (initializer == null) {
-      throw StateError('No SDK initializer registered for source=${source.name}');
+      throw StateError(
+        'No SDK initializer registered for source=${source.name}',
+      );
     }
     await initializer.init();
   }
@@ -45,7 +47,9 @@ class AdAdapterRegistry {
   AdTypeAdapter get(AdSource source, AdType type) {
     final adapter = _adapters[_key(source, type)];
     if (adapter == null) {
-      throw StateError('No adapter registered for source=${source.name}, type=${type.name}');
+      throw StateError(
+        'No adapter registered for source=${source.name}, type=${type.name}',
+      );
     }
     return adapter;
   }

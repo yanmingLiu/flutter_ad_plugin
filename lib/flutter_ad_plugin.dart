@@ -4,6 +4,7 @@ import 'src/core/ad_config.dart';
 import 'src/core/ad_enums.dart';
 import 'src/engine/ad_engine.dart';
 import 'src/ui/native_ad_view.dart';
+import 'src/utils/ad_logger.dart';
 import 'src/utils/ad_reporter.dart';
 
 export 'src/core/ad_config.dart';
@@ -24,6 +25,14 @@ export 'src/utils/ad_reporter.dart';
 class FlutterAdPlugin {
   FlutterAdPlugin._();
 
+  /// 是否输出详细广告日志。
+  ///
+  /// 默认关闭，只输出请求入口、等待/跳过、失败、展示和收益等关键日志。
+  /// 打开后会额外输出候选广告、逐个加载尝试和 SDK 成功回调。
+  static set verboseLogging(bool enabled) {
+    log.verboseEnabled = enabled;
+  }
+
   /// 初始化广告引擎，必须在使用其他方法前调用。
   static Future<void> init({
     required AdConfigRepository configRepository,
@@ -36,31 +45,92 @@ class FlutterAdPlugin {
   }
 
   /// 预加载指定广告位的全屏广告（开屏/插屏/激励）。
-  static Future<bool> preload(PlacementType placement, {String? eventName}) {
+  ///
+  /// [eventName] 是宿主自定义事件名，必须由调用方明确传入并原样透传。
+  static Future<bool> preload(
+    PlacementType placement, {
+    required String eventName,
+  }) {
     return AdEngine.instance.preload(placement, eventName: eventName);
+  }
+
+  /// 批量预加载广告位。
+  ///
+  /// 插件会根据 JSON 中每个 placement 的类型自动加载全屏广告和/或原生广告；
+  /// 具体在冷启动、热启动或业务流程中预加载哪些广告位，由宿主决定。
+  static Future<void> preloadPlacements(
+    Iterable<PlacementType> placements, {
+    required String eventName,
+  }) {
+    return AdEngine.instance.preloadPlacements(
+      placements,
+      eventName: eventName,
+    );
   }
 
   /// 展示指定广告位的全屏广告。
   ///
   /// 会阻塞直到用户关闭广告或展示失败。同一广告位如果配置了多个
   /// 全屏类型（通过 id/id2 展开），连续调用两次 show() 可逐个弹出。
-  static Future<bool> show(PlacementType placement, {String? placementLabel, String? eventName}) {
-    return AdEngine.instance.show(placement, placementLabel: placementLabel, eventName: eventName);
+  static Future<bool> show(
+    PlacementType placement, {
+    String? placementLabel,
+    required String eventName,
+  }) {
+    return AdEngine.instance.show(
+      placement,
+      placementLabel: placementLabel,
+      eventName: eventName,
+    );
+  }
+
+  /// 按缓存情况连续展示同一广告位下的两个全屏广告。
+  static Future<bool> showSequence(
+    PlacementType placement, {
+    String? placementLabel,
+    required String eventName,
+  }) {
+    return AdEngine.instance.showSequence(
+      placement,
+      placementLabel: placementLabel,
+      eventName: eventName,
+    );
   }
 
   /// 预加载指定广告位的原生广告。
-  static Future<bool> loadNative(PlacementType placement, {String? eventName}) {
+  static Future<bool> loadNative(
+    PlacementType placement, {
+    required String eventName,
+  }) {
     return AdEngine.instance.preloadNative(placement, eventName: eventName);
   }
 
   /// 获取已缓存的原生广告对象（单个）。
-  static Object? getNativeAd(PlacementType placement) {
-    return AdEngine.instance.getNativeAd(placement);
+  static Object? getNativeAd(
+    PlacementType placement, {
+    String? placementLabel,
+    required String eventName,
+  }) {
+    return AdEngine.instance.getNativeAd(
+      placement,
+      placementLabel: placementLabel,
+      eventName: eventName,
+    );
   }
 
   /// 获取已缓存的原生广告对象（多个），用于双原生组合展示。
-  static List<Object> getNativeAds(PlacementType placement, {int count = 2}) {
-    return AdEngine.instance.getNativeAds(placement, count: count);
+  static List<Object> getNativeAds(
+    PlacementType placement, {
+    int count = 2,
+    String? placementLabel,
+    required String eventName,
+  }) {
+    return AdEngine.instance.getNativeAds(
+      placement,
+      count: count,
+      placementLabel: placementLabel,
+      eventName: eventName,
+    );
   }
 
   /// 渲染单个原生广告的 Widget。

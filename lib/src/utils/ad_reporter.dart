@@ -11,15 +11,13 @@ enum AdEventType {
   clicked,
   income,
   close,
-  rewardEarned,
-  blockedByGuard,
 }
 
 /// 广告埋点事件。
 ///
 /// 由引擎在广告生命周期的各个节点创建，通过 [AdEventReporter] 回调给宿主。
 ///
-/// [eventName] 是宿主调用 [show]/[preload]/[loadNative] 时传入的自定义事件名，
+/// [eventName] 是宿主调用 [show]/[preload]/[loadNative] 时必传的广告场景。
 /// 用于在埋点系统中区分场景（如 `open_cold`、`open_hot`、`cold_load` 等）。
 /// 插件不做任何处理，原样透传。
 class AdEvent {
@@ -35,8 +33,8 @@ class AdEvent {
   final String? errorReason;
   final DateTime timestamp;
 
-  /// 宿主传入的自定义事件标签，插件原样透传。
-  final String? eventName;
+  /// 宿主传入的广告场景，插件原样透传。
+  final String eventName;
 
   AdEvent({
     required this.eventType,
@@ -50,8 +48,25 @@ class AdEvent {
     this.errorCode,
     this.errorReason,
     required this.timestamp,
-    this.eventName,
+    required this.eventName,
   });
+
+  Map<String, Object?> toJson() {
+    return {
+      'event_type': eventType.name,
+      'placement': placement.name,
+      'placement_label': placementLabel,
+      'ad_type': adType.name,
+      'ad_source': source.name,
+      'ad_unit_id': adUnitId,
+      'revenue': revenue,
+      'currency': currency,
+      'error_code': errorCode,
+      'error_reason': errorReason,
+      'timestamp': timestamp.toIso8601String(),
+      'event_name': eventName,
+    };
+  }
 }
 
 /// 埋点上报接口，由宿主实现并注入到 [init] 中。

@@ -84,4 +84,94 @@ void main() {
     expect(config.loadTimeoutSeconds, 9);
     expect(config.getUnits(openPlacement).single.id, 'local-open');
   });
+
+  test('parses server ad field aliases and common placement policies', () {
+    final config = AdConfigParser().parse({
+      'interval': 60,
+      'random_list': ['not', 'an', 'ad'],
+      'open': [
+        {
+          'ad_source': 'admob',
+          'ad_weight': 1,
+          'ad_type': 'native',
+          'ad_id': 'open-native',
+        },
+      ],
+      'behavior': [
+        {
+          'ad_source': 'admob',
+          'ad_weight': 1,
+          'ad_type': 'interstitial',
+          'ad_id': 'common-fullscreen',
+        },
+      ],
+      'level_h': [
+        {
+          'ad_source': 'admob',
+          'ad_weight': 1,
+          'ad_type': 'interstitial',
+          'ad_id': 'high-value',
+        },
+      ],
+      'play_middle': [
+        {
+          'ad_source': 'admob',
+          'ad_weight': 1,
+          'ad_type': 'double_native',
+          'ad_id': 'native-1',
+          'ad_id2': 'native-2',
+        },
+      ],
+      'common_placements': ['behavior', 'behavior2'],
+      'placement_policy': {
+        'open': {
+          'wait_for_load_on_show': false,
+          'prefer_high_value_on_show': false,
+        },
+        'message': {'wait_for_load_on_show': true},
+      },
+    });
+
+    const openPlacement = PlacementType('open');
+    const behaviorPlacement = PlacementType('behavior');
+    const levelHPlacement = PlacementType('level_h');
+    const playMiddlePlacement = PlacementType('play_middle');
+
+    expect(config.commonPlacements, [
+      const PlacementType('behavior'),
+      const PlacementType('behavior2'),
+    ]);
+    expect(config.configuredPlacements.toSet(), {
+      openPlacement,
+      behaviorPlacement,
+      levelHPlacement,
+      playMiddlePlacement,
+    });
+    expect(config.highValuePlacement, levelHPlacement);
+    expect(config.getPolicy(openPlacement).waitForLoadOnShow, isFalse);
+    expect(config.getPolicy(openPlacement).preferHighValueOnShow, isFalse);
+    expect(
+      config.getPolicy(const PlacementType('message')).waitForLoadOnShow,
+      isTrue,
+    );
+    expect(
+      config.getPolicy(const PlacementType('message')).preferHighValueOnShow,
+      isTrue,
+    );
+    expect(config.getUnits(behaviorPlacement).single.id, 'common-fullscreen');
+    expect(config.getUnits(levelHPlacement).single.id, 'high-value');
+
+    final playMiddleUnits = config.getUnits(playMiddlePlacement);
+    expect(playMiddleUnits, hasLength(2));
+    expect(playMiddleUnits.map((unit) => unit.type), [
+      AdType.doubleNative,
+      AdType.doubleNative,
+    ]);
+    expect(playMiddleUnits.map((unit) => unit.id), ['native-1', 'native-2']);
+    expect(config.getPolicy(playMiddlePlacement).supports(AdType.native), true);
+    expect(
+      config.getPolicy(playMiddlePlacement).supports(AdType.doubleNative),
+      true,
+    );
+  });
 }

@@ -1,4 +1,3 @@
-
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
@@ -7,7 +6,7 @@ class FacebookSDKUtil {
   static const String m1 = "initializeFbSDK";
   static const String _logAdImpressionMethod = 'logAdImpression';
   static const int _maxPendingAdImpressions = 50;
-  
+
   static bool _isInitialized = false;
   static String? _appId;
   static String? _token;
@@ -42,12 +41,16 @@ class FacebookSDKUtil {
     required double value,
     required String currency,
     required String adType,
+    required String adScreen,
     String adPlatform = 'AdMob',
     String? adSource,
     String? adUnitId,
   }) async {
     if (value <= 0 || currency.isEmpty) {
-      debugPrint('Facebook ad revenue parameters invalid: value=$value currency=$currency');
+      debugPrint(
+        '[fb][ad_impression] skip_invalid value=$value currency=$currency '
+        'adType=$adType adScreen=$adScreen adUnitId=${adUnitId ?? ''}',
+      );
       return;
     }
     if (!_isInitialized) {
@@ -56,6 +59,7 @@ class FacebookSDKUtil {
           value: value,
           currency: currency,
           adType: adType,
+          adScreen: adScreen,
           adPlatform: adPlatform,
           adSource: adSource,
           adUnitId: adUnitId,
@@ -72,6 +76,7 @@ class FacebookSDKUtil {
       value: value,
       currency: currency,
       adType: adType,
+      adScreen: adScreen,
       adPlatform: adPlatform,
       adSource: adSource,
       adUnitId: adUnitId,
@@ -82,6 +87,7 @@ class FacebookSDKUtil {
     required double value,
     required String currency,
     required String adType,
+    required String adScreen,
     required String adPlatform,
     String? adSource,
     String? adUnitId,
@@ -94,10 +100,24 @@ class FacebookSDKUtil {
         'adPlatform': adPlatform,
         'adSource': adSource ?? adPlatform,
         'adUnitId': adUnitId ?? '',
+        'adScreen': adScreen,
       });
-      debugPrint('[fb][ad_impression] sent value=$value currency=$currency adType=$adType');
+      debugPrint(
+        '[fb][ad_impression] sent value=$value currency=$currency '
+        'adType=$adType adScreen=$adScreen adUnitId=${adUnitId ?? ''}',
+      );
     } on PlatformException catch (e) {
-      debugPrint('Facebook ad impression logging failed: ${e.message}');
+      debugPrint(
+        '[fb][ad_impression] failed code=${e.code} message=${e.message} '
+        'details=${e.details} value=$value currency=$currency '
+        'adType=$adType adScreen=$adScreen adUnitId=${adUnitId ?? ''}',
+      );
+    } catch (e, st) {
+      debugPrint(
+        '[fb][ad_impression] failed error=$e value=$value currency=$currency '
+        'adType=$adType adScreen=$adScreen adUnitId=${adUnitId ?? ''}',
+      );
+      debugPrint('$st');
     }
   }
 
@@ -111,6 +131,7 @@ class FacebookSDKUtil {
         value: event.value,
         currency: event.currency,
         adType: event.adType,
+        adScreen: event.adScreen,
         adPlatform: event.adPlatform,
         adSource: event.adSource,
         adUnitId: event.adUnitId,
@@ -134,6 +155,7 @@ class _PendingAdImpression {
     required this.value,
     required this.currency,
     required this.adType,
+    required this.adScreen,
     required this.adPlatform,
     this.adSource,
     this.adUnitId,
@@ -142,6 +164,7 @@ class _PendingAdImpression {
   final double value;
   final String currency;
   final String adType;
+  final String adScreen;
   final String adPlatform;
   final String? adSource;
   final String? adUnitId;

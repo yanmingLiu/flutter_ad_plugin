@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_ad_plugin/flutter_ad_plugin.dart';
 
@@ -8,7 +10,14 @@ import 'utils/facebook_util.dart';
 const openPlacement = PlacementType('open');
 const homePlacement = PlacementType('home');
 const messagePlacement = PlacementType('message');
-const doubleAdPlacement = PlacementType('double_ad');
+const playMiddlePlacement = PlacementType('play_middle');
+const levelHPlacement = PlacementType('level_h');
+const coldStartBackgroundPreloadPlacements = [
+  homePlacement,
+  messagePlacement,
+  playMiddlePlacement,
+  levelHPlacement,
+];
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -65,6 +74,13 @@ class _LaunchGatePageState extends State<LaunchGatePage> {
   }
 
   Future<void> _enterApp() async {
+    unawaited(
+      FlutterAdPlugin.preloadPlacements(
+        coldStartBackgroundPreloadPlacements,
+        eventName: 'open_cold',
+      ),
+    );
+
     // 冷启动开屏广告
     await FlutterAdPlugin.show(openPlacement, eventName: 'open_cold');
 
@@ -98,9 +114,11 @@ class _AdDemoHomePageState extends State<AdDemoHomePage> {
     super.initState();
     _initNativeAd();
 
-    _lifecycle = AdLifecycle(onForeground: () {
-      _showFullscreen(openPlacement);
-    });
+    _lifecycle = AdLifecycle(
+      onForeground: () {
+        _showFullscreen(openPlacement);
+      },
+    );
     _lifecycle.start();
   }
 
@@ -111,17 +129,21 @@ class _AdDemoHomePageState extends State<AdDemoHomePage> {
   }
 
   Future<void> _initNativeAd() async {
+    const eventName = 'home_show';
     // 优先尝试获取已加载的
-    var ad = FlutterAdPlugin.getNativeAd(homePlacement);
+    var ad = FlutterAdPlugin.getNativeAd(homePlacement, eventName: eventName);
     if (ad == null) {
       setState(() => _status = 'Waiting for native ad...');
       // 如果还没加载好，则发起加载并等待（引擎已优化，此处会挂载到 init 时的预加载任务上）
       await FlutterAdPlugin.loadNative(homePlacement, eventName: 'first_load');
-      ad = FlutterAdPlugin.getNativeAd(homePlacement);
+      ad = FlutterAdPlugin.getNativeAd(homePlacement, eventName: eventName);
     }
 
     if (mounted) {
-      final ads = FlutterAdPlugin.getNativeAds(homePlacement);
+      final ads = FlutterAdPlugin.getNativeAds(
+        homePlacement,
+        eventName: eventName,
+      );
       setState(() {
         _nativeAd = ad;
         _nativeAds = ads;
@@ -131,41 +153,28 @@ class _AdDemoHomePageState extends State<AdDemoHomePage> {
   }
 
   Future<void> _showFullscreen(PlacementType placement) async {
-    final eventName = placement == openPlacement ? 'open_hot' : null;
+    final eventName = placement == openPlacement ? 'open_hot' : placement.name;
     setState(() => _status = 'Showing ${placement.name}...');
     final shown = await FlutterAdPlugin.show(placement, eventName: eventName);
     setState(() => _status = shown ? 'Ad closed' : 'No ad was shown');
   }
 
   Future<void> _reloadNative() async {
+    const loadEventName = 'manual_load';
+    const showEventName = 'home_show';
     setState(() => _status = 'Loading native ad...');
-    await FlutterAdPlugin.loadNative(homePlacement);
+    await FlutterAdPlugin.loadNative(homePlacement, eventName: loadEventName);
     setState(() {
-      _nativeAd = FlutterAdPlugin.getNativeAd(homePlacement);
-      _nativeAds = FlutterAdPlugin.getNativeAds(homePlacement);
+      _nativeAd = FlutterAdPlugin.getNativeAd(
+        homePlacement,
+        eventName: showEventName,
+      );
+      _nativeAds = FlutterAdPlugin.getNativeAds(
+        homePlacement,
+        eventName: showEventName,
+      );
       _status = _nativeAd == null ? 'Native ad unavailable' : 'Native ad ready';
     });
-  }
-
-  Future<void> _showTwoAds() async {
-    // 连续展示两个全屏激励广告：一个 placement 缓存 2 个广告，逐个弹出
-    setState(() => _status = 'Showing first rewarded...');
-    final firstShown = await FlutterAdPlugin.show(
-      doubleAdPlacement,
-      eventName: 'double_ad_1',
-    );
-    if (!firstShown) {
-      setState(() => _status = 'First ad failed, skipping second');
-      return;
-    }
-    setState(() => _status = 'Showing second rewarded...');
-    final secondShown = await FlutterAdPlugin.show(
-      doubleAdPlacement,
-      eventName: 'double_ad_2',
-    );
-    setState(
-      () => _status = secondShown ? 'Both ads shown' : 'Second ad failed',
-    );
   }
 
   @override
@@ -203,11 +212,6 @@ class _AdDemoHomePageState extends State<AdDemoHomePage> {
                   onPressed: _reloadNative,
                   icon: const Icon(Icons.refresh),
                   label: const Text('Reload Native'),
-                ),
-                FilledButton.tonalIcon(
-                  onPressed: _showTwoAds,
-                  icon: const Icon(Icons.double_arrow),
-                  label: const Text('2 Rewardeds'),
                 ),
               ],
             ),

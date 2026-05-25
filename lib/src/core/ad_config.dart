@@ -14,7 +14,8 @@ class AdConfig {
   final int loadTimeoutSeconds;
   final int samePlacementCdSeconds;
   final int differentPlacementCdSeconds;
-  final List<PlacementType> preloadList;
+  final List<PlacementType> commonPlacements;
+  final PlacementType? highValuePlacement;
   final Map<PlacementType, List<AdUnitConfig>> placements;
   final Map<PlacementType, PlacementPolicy> policies;
 
@@ -22,7 +23,8 @@ class AdConfig {
     required this.loadTimeoutSeconds,
     required this.samePlacementCdSeconds,
     required this.differentPlacementCdSeconds,
-    this.preloadList = const [],
+    this.commonPlacements = const [],
+    this.highValuePlacement,
     required this.placements,
     this.policies = const {},
   });
@@ -41,6 +43,36 @@ class AdConfig {
     return size;
   }
 
+  int fullscreenCacheSizeFor(PlacementType placement, {int minimum = 1}) {
+    return _cacheSizeFor(
+      placement,
+      minimum: minimum,
+      include: (unit) => unit.type.isFullscreen,
+    );
+  }
+
+  int nativeCacheSizeFor(PlacementType placement, {int minimum = 1}) {
+    return _cacheSizeFor(
+      placement,
+      minimum: minimum,
+      include: (unit) => unit.type.isNative,
+    );
+  }
+
+  int _cacheSizeFor(
+    PlacementType placement, {
+    required int minimum,
+    required bool Function(AdUnitConfig unit) include,
+  }) {
+    var size = minimum;
+    for (final unit in getUnits(placement).where(include)) {
+      if (unit.poolSize > size) {
+        size = unit.poolSize;
+      }
+    }
+    return size;
+  }
+
   Duration loadTimeoutFor(AdUnitConfig unit) {
     return Duration(seconds: unit.loadTimeoutSeconds ?? loadTimeoutSeconds);
   }
@@ -48,6 +80,12 @@ class AdConfig {
   PlacementPolicy getPolicy(PlacementType placement) {
     return policies[placement] ??
         PlacementPolicy.defaultPolicy(this, placement);
+  }
+
+  Iterable<PlacementType> get configuredPlacements => placements.keys;
+
+  bool hasPlacement(PlacementType placement) {
+    return getUnits(placement).isNotEmpty;
   }
 }
 
@@ -83,6 +121,8 @@ class PlacementPolicy {
   final bool applyDifferentPlacementCd;
   final bool contributesToGlobalCooldown;
   final bool showNotReadyToast;
+  final bool waitForLoadOnShow;
+  final bool preferHighValueOnShow;
   final String? notReadyMsg;
   final Set<AdType>? allowedTypes;
 
@@ -92,6 +132,8 @@ class PlacementPolicy {
     required this.applyDifferentPlacementCd,
     required this.contributesToGlobalCooldown,
     required this.showNotReadyToast,
+    required this.waitForLoadOnShow,
+    required this.preferHighValueOnShow,
     this.notReadyMsg,
     this.allowedTypes,
   });
@@ -108,6 +150,8 @@ class PlacementPolicy {
       applyDifferentPlacementCd: false,
       contributesToGlobalCooldown: false,
       showNotReadyToast: false,
+      waitForLoadOnShow: placement.name != 'open',
+      preferHighValueOnShow: placement.name != 'open',
     );
   }
 
@@ -116,11 +160,9 @@ class PlacementPolicy {
       return allowedTypes!.contains(type);
     }
     if (isFullscreen) {
-      return type == AdType.open ||
-          type == AdType.interstitial ||
-          type == AdType.rewarded;
+      return type.isFullscreen || type.isNative;
     } else {
-      return type == AdType.native;
+      return type.isNative;
     }
   }
 }
@@ -130,32 +172,26 @@ class AdConfigParser {
     final placements = <PlacementType, List<AdUnitConfig>>{};
     final policies = <PlacementType, PlacementPolicy>{};
 
-    final globalKeys = {
-      'load_timeout',
-      'same_placement_cd',
-      'different_placement_cd',
-      'placement_policy',
-      'preload_list',
-    };
-
     json.forEach((key, value) {
-      if (globalKeys.contains(key)) {
-        return;
-      }
       if (value is! List) {
         return;
       }
 
-      final placement = PlacementType(key);
-      final parsed =
-          value
-              .whereType<Map>()
-              .map((item) => Map<String, dynamic>.from(item))
-              .expand(_parseUnits)
-              .toList()
-            ..sort((a, b) => b.weight.compareTo(a.weight));
+      final items = value
+          .whereType<Map>()
+          .map((item) => Map<String, dynamic>.from(item))
+          .toList();
+      if (items.isEmpty || !items.every(_looksLikeAdUnit)) {
+        return;
+      }
 
-      placements[placement] = parsed;
+      final placement = PlacementType(key);
+      final parsed = items.expand(_parseUnits).toList()
+        ..sort((a, b) => b.weight.compareTo(a.weight));
+
+      if (parsed.isNotEmpty) {
+        placements[placement] = parsed;
+      }
     });
 
     final policyMapRaw = json['placement_policy'];
@@ -171,15 +207,15 @@ class AdConfigParser {
       policies[placement] = _parsePolicy(placement, units, jsonPolicy);
     });
 
-    final preloadListRaw = json['preload_list'];
-    final List<PlacementType> preloadList = [];
-    if (preloadListRaw is List) {
-      for (var item in preloadListRaw) {
-        if (item is String) {
-          preloadList.add(PlacementType(item));
-        }
-      }
-    }
+    final commonList = _parsePlacementList(
+      json['common_placements'] ?? json['common_placement'],
+    );
+    final highValueRaw = json['high_value_placement'];
+    final highValuePlacement = highValueRaw is String && highValueRaw.isNotEmpty
+        ? PlacementType(highValueRaw)
+        : placements.containsKey(const PlacementType('level_h'))
+        ? const PlacementType('level_h')
+        : null;
 
     return AdConfig(
       loadTimeoutSeconds: (json['load_timeout'] as num?)?.toInt() ?? 7,
@@ -187,16 +223,41 @@ class AdConfigParser {
           (json['same_placement_cd'] as num?)?.toInt() ?? 30,
       differentPlacementCdSeconds:
           (json['different_placement_cd'] as num?)?.toInt() ?? 30,
-      preloadList: preloadList,
+      commonPlacements: commonList.isEmpty
+          ? const [PlacementType('behavior'), PlacementType('behavior2')]
+          : commonList,
+      highValuePlacement: highValuePlacement,
       placements: placements,
       policies: policies,
     );
   }
 
+  bool _looksLikeAdUnit(Map<String, dynamic> json) {
+    final hasSource = _stringValue(json['source'] ?? json['ad_source']) != null;
+    final hasType = _stringValue(json['type'] ?? json['ad_type']) != null;
+    final hasId = _parseAdUnitIds(json).isNotEmpty;
+    return hasSource && hasType && hasId;
+  }
+
+  List<PlacementType> _parsePlacementList(Object? raw) {
+    if (raw is String && raw.trim().isNotEmpty) {
+      return [PlacementType(raw.trim())];
+    }
+    if (raw is! List) {
+      return const [];
+    }
+    return raw
+        .whereType<String>()
+        .map((item) => item.trim())
+        .where((item) => item.isNotEmpty)
+        .map(PlacementType.new)
+        .toList();
+  }
+
   Iterable<AdUnitConfig> _parseUnits(Map<String, dynamic> json) sync* {
     final ids = _parseAdUnitIds(json);
-    final typeRaw = (json['type'] as String?)?.trim();
-    final sourceRaw = (json['source'] as String?)?.trim();
+    final typeRaw = _stringValue(json['type'] ?? json['ad_type']);
+    final sourceRaw = _stringValue(json['source'] ?? json['ad_source']);
     if (ids.isEmpty || typeRaw == null || sourceRaw == null) {
       return;
     }
@@ -205,7 +266,10 @@ class AdConfigParser {
       final id = ids[index];
       yield AdUnitConfig(
         source: AdSource(sourceRaw),
-        weight: (json['weight'] as num?)?.toInt() ?? 0,
+        weight:
+            (json['weight'] as num?)?.toInt() ??
+            (json['ad_weight'] as num?)?.toInt() ??
+            0,
         type: AdType(typeRaw),
         id: id,
         cacheKey: '${sourceRaw}_${typeRaw}_${index}_$id',
@@ -230,7 +294,8 @@ class AdConfigParser {
       }
     }
 
-    addId(json['id']);
+    addId(json['id'] ?? json['ad_id']);
+    addId(json['ad_id2']);
 
     final idsRaw = json['ids'];
     if (idsRaw is List) {
@@ -257,6 +322,14 @@ class AdConfigParser {
     return ids;
   }
 
+  String? _stringValue(Object? value) {
+    if (value is! String) {
+      return null;
+    }
+    final text = value.trim();
+    return text.isEmpty ? null : text;
+  }
+
   PlacementPolicy _parsePolicy(
     PlacementType placement,
     List<AdUnitConfig> units,
@@ -281,6 +354,12 @@ class AdConfigParser {
       contributesToGlobalCooldown:
           json['contributes_to_global_cooldown'] ?? false,
       showNotReadyToast: json['show_not_ready_toast'] ?? false,
+      waitForLoadOnShow:
+          json['wait_for_load_on_show'] ??
+          json['wait_load_on_show'] ??
+          (placement.name != 'open'),
+      preferHighValueOnShow:
+          json['prefer_high_value_on_show'] ?? (placement.name != 'open'),
       notReadyMsg: json['not_ready_msg'] as String?,
       allowedTypes: allowedTypes,
     );
@@ -328,7 +407,7 @@ class DefaultAdConfigRepository implements AdConfigRepository {
   }
 
   Future<AdConfig> _loadConfig() async {
-    log.d('⚙️ [config] loading');
+    log.v('⚙️ [config] loading');
     if (Firebase.apps.isNotEmpty) {
       final remoteConfig = FirebaseRemoteConfig.instance;
       _startRemoteConfigListener(remoteConfig);
@@ -344,7 +423,7 @@ class DefaultAdConfigRepository implements AdConfigRepository {
       unawaited(_fetchAndCacheRemoteConfig(remoteConfig));
     }
 
-    log.d('⚙️ [config] fallback_local');
+    log.v('⚙️ [config] fallback_local');
     return _parser.parse(Map<String, dynamic>.from(_localConfig));
   }
 
@@ -368,7 +447,7 @@ class DefaultAdConfigRepository implements AdConfigRepository {
       );
       if (remoteAdConfig != null) {
         _cached = remoteAdConfig;
-        log.d('⚙️ [config] remote_cached');
+        log.v('⚙️ [config] remote_cached');
       }
     } catch (e) {
       log.e('❌ [config] remote_fetch_fail: $e');
@@ -394,7 +473,7 @@ class DefaultAdConfigRepository implements AdConfigRepository {
             );
             if (remoteAdConfig != null) {
               _cached = remoteAdConfig;
-              log.d('⚙️ [config] remote_updated');
+              log.v('⚙️ [config] remote_updated');
             }
           } catch (e) {
             log.e('❌ [config] remote_update_fail: $e');
@@ -411,7 +490,7 @@ class DefaultAdConfigRepository implements AdConfigRepository {
 
   AdConfig? _parseRemoteConfig(String rawJson) {
     if (rawJson.trim().isEmpty) {
-      log.d('⚙️ [config] remote_empty');
+      log.v('⚙️ [config] remote_empty');
       return null;
     }
 

@@ -11,6 +11,39 @@ import '../../utils/ad_reporter.dart';
 import '../ad_adapter.dart';
 import '../ad_registry.dart';
 
+void _reportPaidEvent({
+  required AdEventReporter reporter,
+  required PlacementType placement,
+  String? placementLabel,
+  required String eventName,
+  required AdType adType,
+  required AdSource source,
+  required String adUnitId,
+  required double valueMicros,
+  required String currencyCode,
+}) {
+  _reportLifecycleEvent(
+    reporter,
+    AdEvent(
+      eventType: AdEventType.income,
+      placement: placement,
+      placementLabel: placementLabel,
+      adType: adType,
+      source: source,
+      adUnitId: adUnitId,
+      revenue: valueMicros,
+      currency: currencyCode,
+      timestamp: DateTime.now(),
+      eventName: eventName,
+    ),
+  );
+}
+
+void _reportLifecycleEvent(AdEventReporter reporter, AdEvent event) {
+  log.event(event);
+  reporter.report(event);
+}
+
 /// AdMob SDK 初始化器
 class AdmobSdkInitializer implements AdSourceSdkInitializer {
   @override
@@ -41,15 +74,22 @@ class AdmobOpenAdapter implements AdTypeAdapter {
     required AdUnitConfig unit,
     required Duration timeout,
     required AdEventReporter reporter,
-    String? eventName,
+    required String eventName,
     void Function(Object ad, AdType type, String adUnitId)? onLateAdLoaded,
   }) async {
-    log.d('📥 load:open:${placement.name} id=${unit.id}');
+    log.v(
+      '📥 [adapter_load] start: source=${source.name} type=${type.name} '
+      'placement=${placement.name} id=${unit.id} timeout=${timeout.inSeconds}s '
+      'event=$eventName',
+    );
     final completer = Completer<AdLoadResult<Object>>();
 
     Timer(timeout, () {
       if (!completer.isCompleted) {
-        log.d('❌ timeout:open:${placement.name}');
+        log.v(
+          '❌ [adapter_load] timeout: source=${source.name} type=${type.name} '
+          'placement=${placement.name} id=${unit.id} timeout=${timeout.inSeconds}s',
+        );
         completer.complete(
           AdLoadResult.failure(
             type: type,
@@ -65,13 +105,15 @@ class AdmobOpenAdapter implements AdTypeAdapter {
       request: const AdRequest(),
       adLoadCallback: AppOpenAdLoadCallback(
         onAdLoaded: (ad) {
-          log.d('✅ loaded:open:${placement.name}');
+          log.v(
+            '✅ [adapter_load] loaded: source=${source.name} type=${type.name} '
+            'placement=${placement.name} id=${unit.id}',
+          );
           if (!completer.isCompleted) {
             completer.complete(
               AdLoadResult.success(ad: ad, type: type, adUnitId: unit.id),
             );
           } else {
-            log.d('📥 late_load:open:${placement.name} (cached)');
             if (onLateAdLoaded != null) {
               onLateAdLoaded(ad, type, unit.id);
             } else {
@@ -80,7 +122,11 @@ class AdmobOpenAdapter implements AdTypeAdapter {
           }
         },
         onAdFailedToLoad: (error) {
-          log.d('❌ failed:open:${placement.name} code=${error.code}');
+          log.v(
+            '❌ [adapter_load] failed: source=${source.name} type=${type.name} '
+            'placement=${placement.name} id=${unit.id} code=${error.code} '
+            'message=${error.message}',
+          );
           if (!completer.isCompleted) {
             completer.complete(
               AdLoadResult.failure(type: type, adUnitId: unit.id, error: error),
@@ -96,7 +142,7 @@ class AdmobOpenAdapter implements AdTypeAdapter {
   Future<AdShowResult> show({
     required PlacementType placement,
     String? placementLabel,
-    String? eventName,
+    required String eventName,
     required Object ad,
     required AdEventReporter reporter,
     VoidCallback? onAdShowed,
@@ -104,10 +150,24 @@ class AdmobOpenAdapter implements AdTypeAdapter {
   }) async {
     final appOpenAd = ad as AppOpenAd;
     final completer = Completer<AdShowResult>();
+    appOpenAd.onPaidEvent = (ad, valueMicros, precision, currencyCode) {
+      _reportPaidEvent(
+        reporter: reporter,
+        placement: placement,
+        placementLabel: placementLabel,
+        eventName: eventName,
+        adType: type,
+        source: source,
+        adUnitId: ad.adUnitId,
+        valueMicros: valueMicros,
+        currencyCode: currencyCode,
+      );
+    };
     appOpenAd.fullScreenContentCallback = FullScreenContentCallback(
       onAdShowedFullScreenContent: (ad) {
         onAdShowed?.call();
-        reporter.report(
+        _reportLifecycleEvent(
+          reporter,
           AdEvent(
             eventType: AdEventType.showSuccess,
             placement: placement,
@@ -123,7 +183,8 @@ class AdmobOpenAdapter implements AdTypeAdapter {
       onAdFailedToShowFullScreenContent: (ad, error) {
         ad.dispose();
         completer.complete(AdShowResult.failure(error));
-        reporter.report(
+        _reportLifecycleEvent(
+          reporter,
           AdEvent(
             eventType: AdEventType.showFail,
             placement: placement,
@@ -142,7 +203,8 @@ class AdmobOpenAdapter implements AdTypeAdapter {
         ad.dispose();
         onClosed?.call();
         if (!completer.isCompleted) completer.complete(AdShowResult.success());
-        reporter.report(
+        _reportLifecycleEvent(
+          reporter,
           AdEvent(
             eventType: AdEventType.close,
             placement: placement,
@@ -156,7 +218,8 @@ class AdmobOpenAdapter implements AdTypeAdapter {
         );
       },
       onAdClicked: (ad) {
-        reporter.report(
+        _reportLifecycleEvent(
+          reporter,
           AdEvent(
             eventType: AdEventType.clicked,
             placement: placement,
@@ -170,6 +233,7 @@ class AdmobOpenAdapter implements AdTypeAdapter {
         );
       },
     );
+
     await appOpenAd.show();
     return completer.future;
   }
@@ -191,15 +255,22 @@ class AdmobInterstitialAdapter implements AdTypeAdapter {
     required AdUnitConfig unit,
     required Duration timeout,
     required AdEventReporter reporter,
-    String? eventName,
+    required String eventName,
     void Function(Object ad, AdType type, String adUnitId)? onLateAdLoaded,
   }) async {
-    log.d('📥 load:interstitial:${placement.name} id=${unit.id}');
+    log.v(
+      '📥 [adapter_load] start: source=${source.name} type=${type.name} '
+      'placement=${placement.name} id=${unit.id} timeout=${timeout.inSeconds}s '
+      'event=$eventName',
+    );
     final completer = Completer<AdLoadResult<Object>>();
 
     Timer(timeout, () {
       if (!completer.isCompleted) {
-        log.d('❌ timeout:interstitial:${placement.name}');
+        log.v(
+          '❌ [adapter_load] timeout: source=${source.name} type=${type.name} '
+          'placement=${placement.name} id=${unit.id} timeout=${timeout.inSeconds}s',
+        );
         completer.complete(
           AdLoadResult.failure(
             type: type,
@@ -215,13 +286,15 @@ class AdmobInterstitialAdapter implements AdTypeAdapter {
       request: const AdRequest(),
       adLoadCallback: InterstitialAdLoadCallback(
         onAdLoaded: (ad) {
-          log.d('✅ loaded:interstitial:${placement.name}');
+          log.v(
+            '✅ [adapter_load] loaded: source=${source.name} type=${type.name} '
+            'placement=${placement.name} id=${unit.id}',
+          );
           if (!completer.isCompleted) {
             completer.complete(
               AdLoadResult.success(ad: ad, type: type, adUnitId: unit.id),
             );
           } else {
-            log.d('📥 late_load:interstitial:${placement.name} (cached)');
             if (onLateAdLoaded != null) {
               onLateAdLoaded(ad, type, unit.id);
             } else {
@@ -230,7 +303,11 @@ class AdmobInterstitialAdapter implements AdTypeAdapter {
           }
         },
         onAdFailedToLoad: (error) {
-          log.d('❌ failed:interstitial:${placement.name} code=${error.code}');
+          log.v(
+            '❌ [adapter_load] failed: source=${source.name} type=${type.name} '
+            'placement=${placement.name} id=${unit.id} code=${error.code} '
+            'message=${error.message}',
+          );
           if (!completer.isCompleted) {
             completer.complete(
               AdLoadResult.failure(type: type, adUnitId: unit.id, error: error),
@@ -246,7 +323,7 @@ class AdmobInterstitialAdapter implements AdTypeAdapter {
   Future<AdShowResult> show({
     required PlacementType placement,
     String? placementLabel,
-    String? eventName,
+    required String eventName,
     required Object ad,
     required AdEventReporter reporter,
     VoidCallback? onAdShowed,
@@ -254,10 +331,24 @@ class AdmobInterstitialAdapter implements AdTypeAdapter {
   }) async {
     final interstitialAd = ad as InterstitialAd;
     final completer = Completer<AdShowResult>();
+    interstitialAd.onPaidEvent = (ad, valueMicros, precision, currencyCode) {
+      _reportPaidEvent(
+        reporter: reporter,
+        placement: placement,
+        placementLabel: placementLabel,
+        eventName: eventName,
+        adType: type,
+        source: source,
+        adUnitId: ad.adUnitId,
+        valueMicros: valueMicros,
+        currencyCode: currencyCode,
+      );
+    };
     interstitialAd.fullScreenContentCallback = FullScreenContentCallback(
       onAdShowedFullScreenContent: (ad) {
         onAdShowed?.call();
-        reporter.report(
+        _reportLifecycleEvent(
+          reporter,
           AdEvent(
             eventType: AdEventType.showSuccess,
             placement: placement,
@@ -273,7 +364,8 @@ class AdmobInterstitialAdapter implements AdTypeAdapter {
       onAdFailedToShowFullScreenContent: (ad, error) {
         ad.dispose();
         completer.complete(AdShowResult.failure(error));
-        reporter.report(
+        _reportLifecycleEvent(
+          reporter,
           AdEvent(
             eventType: AdEventType.showFail,
             placement: placement,
@@ -292,7 +384,8 @@ class AdmobInterstitialAdapter implements AdTypeAdapter {
         ad.dispose();
         onClosed?.call();
         if (!completer.isCompleted) completer.complete(AdShowResult.success());
-        reporter.report(
+        _reportLifecycleEvent(
+          reporter,
           AdEvent(
             eventType: AdEventType.close,
             placement: placement,
@@ -306,7 +399,8 @@ class AdmobInterstitialAdapter implements AdTypeAdapter {
         );
       },
       onAdClicked: (ad) {
-        reporter.report(
+        _reportLifecycleEvent(
+          reporter,
           AdEvent(
             eventType: AdEventType.clicked,
             placement: placement,
@@ -341,15 +435,22 @@ class AdmobRewardedAdapter implements AdTypeAdapter {
     required AdUnitConfig unit,
     required Duration timeout,
     required AdEventReporter reporter,
-    String? eventName,
+    required String eventName,
     void Function(Object ad, AdType type, String adUnitId)? onLateAdLoaded,
   }) async {
-    log.d('📥 load:rewarded:${placement.name} id=${unit.id}');
+    log.v(
+      '📥 [adapter_load] start: source=${source.name} type=${type.name} '
+      'placement=${placement.name} id=${unit.id} timeout=${timeout.inSeconds}s '
+      'event=$eventName',
+    );
     final completer = Completer<AdLoadResult<Object>>();
 
     Timer(timeout, () {
       if (!completer.isCompleted) {
-        log.d('❌ timeout:rewarded:${placement.name}');
+        log.v(
+          '❌ [adapter_load] timeout: source=${source.name} type=${type.name} '
+          'placement=${placement.name} id=${unit.id} timeout=${timeout.inSeconds}s',
+        );
         completer.complete(
           AdLoadResult.failure(
             type: type,
@@ -365,13 +466,15 @@ class AdmobRewardedAdapter implements AdTypeAdapter {
       request: const AdRequest(),
       rewardedAdLoadCallback: RewardedAdLoadCallback(
         onAdLoaded: (ad) {
-          log.d('✅ loaded:rewarded:${placement.name}');
+          log.v(
+            '✅ [adapter_load] loaded: source=${source.name} type=${type.name} '
+            'placement=${placement.name} id=${unit.id}',
+          );
           if (!completer.isCompleted) {
             completer.complete(
               AdLoadResult.success(ad: ad, type: type, adUnitId: unit.id),
             );
           } else {
-            log.d('📥 late_load:rewarded:${placement.name} (cached)');
             if (onLateAdLoaded != null) {
               onLateAdLoaded(ad, type, unit.id);
             } else {
@@ -380,7 +483,11 @@ class AdmobRewardedAdapter implements AdTypeAdapter {
           }
         },
         onAdFailedToLoad: (error) {
-          log.d('❌ failed:rewarded:${placement.name} code=${error.code}');
+          log.v(
+            '❌ [adapter_load] failed: source=${source.name} type=${type.name} '
+            'placement=${placement.name} id=${unit.id} code=${error.code} '
+            'message=${error.message}',
+          );
           if (!completer.isCompleted) {
             completer.complete(
               AdLoadResult.failure(type: type, adUnitId: unit.id, error: error),
@@ -396,7 +503,7 @@ class AdmobRewardedAdapter implements AdTypeAdapter {
   Future<AdShowResult> show({
     required PlacementType placement,
     String? placementLabel,
-    String? eventName,
+    required String eventName,
     required Object ad,
     required AdEventReporter reporter,
     VoidCallback? onAdShowed,
@@ -404,12 +511,25 @@ class AdmobRewardedAdapter implements AdTypeAdapter {
   }) async {
     final rewardedAd = ad as RewardedAd;
     final completer = Completer<AdShowResult>();
-    bool rewardEarned = false;
+    rewardedAd.onPaidEvent = (ad, valueMicros, precision, currencyCode) {
+      _reportPaidEvent(
+        reporter: reporter,
+        placement: placement,
+        placementLabel: placementLabel,
+        eventName: eventName,
+        adType: type,
+        source: source,
+        adUnitId: ad.adUnitId,
+        valueMicros: valueMicros,
+        currencyCode: currencyCode,
+      );
+    };
 
     rewardedAd.fullScreenContentCallback = FullScreenContentCallback(
       onAdShowedFullScreenContent: (ad) {
         onAdShowed?.call();
-        reporter.report(
+        _reportLifecycleEvent(
+          reporter,
           AdEvent(
             eventType: AdEventType.showSuccess,
             placement: placement,
@@ -425,7 +545,8 @@ class AdmobRewardedAdapter implements AdTypeAdapter {
       onAdFailedToShowFullScreenContent: (ad, error) {
         ad.dispose();
         completer.complete(AdShowResult.failure(error));
-        reporter.report(
+        _reportLifecycleEvent(
+          reporter,
           AdEvent(
             eventType: AdEventType.showFail,
             placement: placement,
@@ -444,9 +565,10 @@ class AdmobRewardedAdapter implements AdTypeAdapter {
         ad.dispose();
         onClosed?.call();
         if (!completer.isCompleted) {
-          completer.complete(AdShowResult.success(rewardEarned: rewardEarned));
+          completer.complete(AdShowResult.success());
         }
-        reporter.report(
+        _reportLifecycleEvent(
+          reporter,
           AdEvent(
             eventType: AdEventType.close,
             placement: placement,
@@ -460,7 +582,8 @@ class AdmobRewardedAdapter implements AdTypeAdapter {
         );
       },
       onAdClicked: (ad) {
-        reporter.report(
+        _reportLifecycleEvent(
+          reporter,
           AdEvent(
             eventType: AdEventType.clicked,
             placement: placement,
@@ -475,26 +598,7 @@ class AdmobRewardedAdapter implements AdTypeAdapter {
       },
     );
 
-    await rewardedAd.show(
-      onUserEarnedReward: (ad, item) {
-        log.d(
-          '💰 reward_earned:rewarded:${placement.name} amount=${item.amount}',
-        );
-        rewardEarned = true;
-        reporter.report(
-          AdEvent(
-            eventType: AdEventType.rewardEarned,
-            placement: placement,
-            placementLabel: placementLabel,
-            adType: type,
-            source: source,
-            adUnitId: ad.adUnitId,
-            timestamp: DateTime.now(),
-            eventName: eventName,
-          ),
-        );
-      },
-    );
+    await rewardedAd.show(onUserEarnedReward: (ad, item) {});
 
     return completer.future;
   }
@@ -510,21 +614,54 @@ class AdmobNativeAdapter implements AdTypeAdapter {
   @override
   AdType get type => AdType.native;
 
+  static final Map<NativeAd, NativeAdAttribution> _attributions = {};
+
+  static void updateAttribution({
+    required Object ad,
+    required PlacementType placement,
+    String? placementLabel,
+    required String eventName,
+  }) {
+    if (ad is! NativeAd) {
+      return;
+    }
+    final attribution = _attributions[ad];
+    if (attribution == null) {
+      _attributions[ad] = NativeAdAttribution(
+        placement: placement,
+        placementLabel: placementLabel,
+        eventName: eventName,
+      );
+      return;
+    }
+    attribution
+      ..placement = placement
+      ..placementLabel = placementLabel
+      ..eventName = eventName;
+  }
+
   @override
   Future<AdLoadResult<Object>> load({
     required PlacementType placement,
     required AdUnitConfig unit,
     required Duration timeout,
     required AdEventReporter reporter,
-    String? eventName,
+    required String eventName,
     void Function(Object ad, AdType type, String adUnitId)? onLateAdLoaded,
   }) async {
-    log.d('📥 load:native:${placement.name} id=${unit.id}');
+    log.v(
+      '📥 [adapter_load] start: source=${source.name} type=${type.name} '
+      'placement=${placement.name} id=${unit.id} timeout=${timeout.inSeconds}s '
+      'template=${unit.templateType ?? 'medium'} event=$eventName',
+    );
     final completer = Completer<AdLoadResult<Object>>();
 
     Timer(timeout, () {
       if (!completer.isCompleted) {
-        log.d('❌ timeout:native:${placement.name}');
+        log.v(
+          '❌ [adapter_load] timeout: source=${source.name} type=${type.name} '
+          'placement=${placement.name} id=${unit.id} timeout=${timeout.inSeconds}s',
+        );
         completer.complete(
           AdLoadResult.failure(
             type: type,
@@ -545,26 +682,33 @@ class AdmobNativeAdapter implements AdTypeAdapter {
       request: const AdRequest(),
       listener: NativeAdListener(
         onAdLoaded: (ad) {
-          log.d('✅ loaded:native:${placement.name}');
+          log.v(
+            '✅ [adapter_load] loaded: source=${source.name} type=${type.name} '
+            'placement=${placement.name} id=${unit.id}',
+          );
+          final nativeAd = ad as NativeAd;
+          _attributions[nativeAd] = NativeAdAttribution(
+            placement: placement,
+            eventName: eventName,
+          );
           if (!completer.isCompleted) {
             completer.complete(
-              AdLoadResult.success(
-                ad: ad as NativeAd,
-                type: type,
-                adUnitId: unit.id,
-              ),
+              AdLoadResult.success(ad: nativeAd, type: type, adUnitId: unit.id),
             );
           } else {
-            log.d('📥 late_load:native:${placement.name} (cached)');
             if (onLateAdLoaded != null) {
-              onLateAdLoaded(ad as NativeAd, type, unit.id);
+              onLateAdLoaded(nativeAd, type, unit.id);
             } else {
-              ad.dispose();
+              nativeAd.dispose();
             }
           }
         },
         onAdFailedToLoad: (ad, error) {
-          log.d('❌ failed:native:${placement.name} code=${error.code}');
+          log.v(
+            '❌ [adapter_load] failed: source=${source.name} type=${type.name} '
+            'placement=${placement.name} id=${unit.id} code=${error.code} '
+            'message=${error.message}',
+          );
           ad.dispose();
           if (!completer.isCompleted) {
             completer.complete(
@@ -573,7 +717,8 @@ class AdmobNativeAdapter implements AdTypeAdapter {
           }
         },
         onAdClicked: (ad) {
-          reporter.report(
+          _reportLifecycleEvent(
+            reporter,
             AdEvent(
               eventType: AdEventType.clicked,
               placement: placement,
@@ -586,21 +731,18 @@ class AdmobNativeAdapter implements AdTypeAdapter {
           );
         },
         onPaidEvent: (ad, valueMicros, precision, currencyCode) {
-          log.d(
-            '💰 income:native:${placement.name} value=$valueMicros $currencyCode',
-          );
-          reporter.report(
-            AdEvent(
-              eventType: AdEventType.income,
-              placement: placement,
-              adType: type,
-              source: source,
-              adUnitId: unit.id,
-              revenue: valueMicros,
-              currency: currencyCode,
-              timestamp: DateTime.now(),
-              eventName: eventName,
-            ),
+          final attribution = _attributions[ad];
+          final reportPlacement = attribution?.placement ?? placement;
+          _reportPaidEvent(
+            reporter: reporter,
+            placement: reportPlacement,
+            placementLabel: attribution?.placementLabel,
+            eventName: attribution?.eventName ?? eventName,
+            adType: type,
+            source: source,
+            adUnitId: unit.id,
+            valueMicros: valueMicros,
+            currencyCode: currencyCode,
           );
         },
       ),
@@ -613,7 +755,7 @@ class AdmobNativeAdapter implements AdTypeAdapter {
   Future<AdShowResult> show({
     required PlacementType placement,
     String? placementLabel,
-    String? eventName,
+    required String eventName,
     required Object ad,
     required AdEventReporter reporter,
     VoidCallback? onAdShowed,
@@ -621,5 +763,10 @@ class AdmobNativeAdapter implements AdTypeAdapter {
   }) async => AdShowResult.success();
 
   @override
-  void dispose(Object ad) => (ad as NativeAd).dispose();
+  void dispose(Object ad) {
+    if (ad is NativeAd) {
+      _attributions.remove(ad);
+      ad.dispose();
+    }
+  }
 }
