@@ -52,15 +52,8 @@ class MyConfigRepository extends DefaultAdConfigRepository {
             "weight": 1,
             "type": "native",
             "id": "ca-app-pub-3940256099942544/3986624511",
+            "id2": "ca-app-pub-3940256099942544/2521693316",
             "template_type": "medium",
-            "refresh_minutes": 20
-        },
-        {
-            "source": "admob",
-            "weight": 1,
-            "type": "native",
-            "id": "ca-app-pub-3940256099942544/2521693316",
-            "template_type": "small",
             "refresh_minutes": 20
         }
     ],
