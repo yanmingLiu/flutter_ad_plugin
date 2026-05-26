@@ -1,10 +1,4 @@
-import 'dart:async';
 import 'dart:convert';
-
-import 'package:firebase_core/firebase_core.dart';
-import 'package:firebase_remote_config/firebase_remote_config.dart';
-
-import '../utils/ad_logger.dart';
 import 'ad_enums.dart';
 
 /// 广告配置的运行时模型，由 [AdConfigParser] 从 JSON 解析生成。
@@ -375,22 +369,16 @@ class DefaultAdConfigRepository implements AdConfigRepository {
     AdConfigParser? parser,
     Map<String, dynamic> localConfig = const <String, dynamic>{},
     String? localConfigJson,
-    String remoteConfigKey = _defaultRemoteConfigKey,
   }) : _parser = parser ?? AdConfigParser(),
-       _localConfig = _parseLocalConfig(localConfig, localConfigJson),
-       _remoteConfigKey = remoteConfigKey;
-
-  static const _defaultRemoteConfigKey = 'ad_config_json';
+       _localConfig = _parseLocalConfig(localConfig, localConfigJson);
 
   final AdConfigParser _parser;
   final Map<String, dynamic> _localConfig;
-  final String _remoteConfigKey;
-  StreamSubscription<RemoteConfigUpdate>? _remoteConfigSubscription;
   AdConfig? _cached;
 
   @override
   Future<AdConfig> getConfig() async {
-    return _cached ??= await _loadConfig();
+    return _cached ??= _parser.parse(Map<String, dynamic>.from(_localConfig));
   }
 
   static Map<String, dynamic> _parseLocalConfig(
@@ -404,104 +392,5 @@ class DefaultAdConfigRepository implements AdConfigRepository {
 
     final decoded = jsonDecode(rawJson);
     return Map<String, dynamic>.from(decoded is Map ? decoded : {});
-  }
-
-  Future<AdConfig> _loadConfig() async {
-    log.v('⚙️ [config] loading');
-    if (Firebase.apps.isNotEmpty) {
-      final remoteConfig = FirebaseRemoteConfig.instance;
-      _startRemoteConfigListener(remoteConfig);
-      await _ensureRemoteInitialized(remoteConfig);
-
-      final remoteAdConfig = _parseRemoteConfig(
-        remoteConfig.getString(_remoteConfigKey),
-      );
-      if (remoteAdConfig != null) {
-        return remoteAdConfig;
-      }
-
-      unawaited(_fetchAndCacheRemoteConfig(remoteConfig));
-    }
-
-    log.v('⚙️ [config] fallback_local');
-    return _parser.parse(Map<String, dynamic>.from(_localConfig));
-  }
-
-  Future<void> _ensureRemoteInitialized(
-    FirebaseRemoteConfig remoteConfig,
-  ) async {
-    try {
-      await remoteConfig.ensureInitialized();
-    } catch (e) {
-      log.e('❌ [config] remote_init_fail: $e');
-    }
-  }
-
-  Future<void> _fetchAndCacheRemoteConfig(
-    FirebaseRemoteConfig remoteConfig,
-  ) async {
-    try {
-      await remoteConfig.fetchAndActivate();
-      final remoteAdConfig = _parseRemoteConfig(
-        remoteConfig.getString(_remoteConfigKey),
-      );
-      if (remoteAdConfig != null) {
-        _cached = remoteAdConfig;
-        log.v('⚙️ [config] remote_cached');
-      }
-    } catch (e) {
-      log.e('❌ [config] remote_fetch_fail: $e');
-    }
-  }
-
-  void _startRemoteConfigListener(FirebaseRemoteConfig remoteConfig) {
-    if (_remoteConfigSubscription != null) {
-      return;
-    }
-
-    try {
-      _remoteConfigSubscription = remoteConfig.onConfigUpdated.listen(
-        (update) async {
-          if (!update.updatedKeys.contains(_remoteConfigKey)) {
-            return;
-          }
-
-          try {
-            await remoteConfig.activate();
-            final remoteAdConfig = _parseRemoteConfig(
-              remoteConfig.getString(_remoteConfigKey),
-            );
-            if (remoteAdConfig != null) {
-              _cached = remoteAdConfig;
-              log.v('⚙️ [config] remote_updated');
-            }
-          } catch (e) {
-            log.e('❌ [config] remote_update_fail: $e');
-          }
-        },
-        onError: (Object e) {
-          log.e('❌ [config] remote_listener_error: $e');
-        },
-      );
-    } catch (e) {
-      log.e('❌ [config] remote_listener_fail: $e');
-    }
-  }
-
-  AdConfig? _parseRemoteConfig(String rawJson) {
-    if (rawJson.trim().isEmpty) {
-      log.v('⚙️ [config] remote_empty');
-      return null;
-    }
-
-    try {
-      final decoded = jsonDecode(rawJson);
-      return _parser.parse(
-        Map<String, dynamic>.from(decoded is Map ? decoded : {}),
-      );
-    } catch (e) {
-      log.e('❌ [config] remote_parse_fail: $e');
-      return null;
-    }
   }
 }

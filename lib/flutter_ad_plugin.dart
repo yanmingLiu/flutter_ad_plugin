@@ -27,8 +27,8 @@ class FlutterAdPlugin {
 
   /// 是否输出详细广告日志。
   ///
-  /// 默认关闭，只输出请求入口、等待/跳过、失败、展示和收益等关键日志。
-  /// 打开后会额外输出候选广告、逐个加载尝试和 SDK 成功回调。
+  /// 默认关闭。完整广告生命周期事件仍会通过 [AdEventReporter] 回调给宿主，
+  /// 控制台只打印失败事件；打开后才额外输出完整事件 JSON 和内部诊断。
   static set verboseLogging(bool enabled) {
     log.verboseEnabled = enabled;
   }
@@ -37,10 +37,12 @@ class FlutterAdPlugin {
   static Future<void> init({
     required AdConfigRepository configRepository,
     required AdEventReporter eventReporter,
+    AdNotReadyCallback? onAdNotReady,
   }) {
     return AdEngine.instance.initWith(
       configRepository: configRepository,
       eventReporter: eventReporter,
+      onAdNotReady: onAdNotReady,
     );
   }
 
@@ -58,6 +60,8 @@ class FlutterAdPlugin {
   ///
   /// 插件会根据 JSON 中每个 placement 的类型自动加载全屏广告和/或原生广告；
   /// 具体在冷启动、热启动或业务流程中预加载哪些广告位，由宿主决定。
+  ///
+  /// 这是 fire-and-forget API：返回时只表示预加载任务已发起，不表示广告已加载完成。
   static Future<void> preloadPlacements(
     Iterable<PlacementType> placements, {
     required String eventName,

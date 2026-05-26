@@ -80,3 +80,24 @@ class DefaultAdEventReporter implements AdEventReporter {
     // 默认空实现，由使用者注入具体实现
   }
 }
+
+/// 广告未准备好时回调给宿主的事件。
+///
+/// 插件只负责给出上下文和建议文案，是否弹 toast/snackbar/dialog 由宿主决定。
+class AdNotReadyEvent {
+  const AdNotReadyEvent({
+    required this.requestedPlacement,
+    required this.showPlacement,
+    this.placementLabel,
+    required this.eventName,
+    required this.message,
+  });
+
+  final PlacementType requestedPlacement;
+  final PlacementType showPlacement;
+  final String? placementLabel;
+  final String eventName;
+  final String message;
+}
+
+typedef AdNotReadyCallback = void Function(AdNotReadyEvent event);

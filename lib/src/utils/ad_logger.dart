@@ -14,7 +14,9 @@ class AppLogger {
   }
 
   void event(AdEvent event) {
-    debugPrint('[ad][event] ${jsonEncode(event.toJson())}');
+    if (verboseEnabled || event.eventType._printsByDefault) {
+      debugPrint('[ad][event] ${jsonEncode(event.toJson())}');
+    }
   }
 
   void v(Object message) {
@@ -25,5 +27,11 @@ class AppLogger {
 
   void e(Object message) {
     debugPrint('[ad] $message');
+  }
+}
+
+extension on AdEventType {
+  bool get _printsByDefault {
+    return this == AdEventType.loadFailed || this == AdEventType.showFail;
   }
 }

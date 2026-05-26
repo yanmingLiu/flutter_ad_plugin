@@ -5,7 +5,6 @@ import 'package:flutter_ad_plugin/flutter_ad_plugin.dart';
 
 import 'integration_templates.dart';
 import 'utils/ad_lifecycle.dart';
-import 'utils/facebook_util.dart';
 
 const openPlacement = PlacementType('open');
 const homePlacement = PlacementType('home');
@@ -31,14 +30,14 @@ Future<void> main() async {
   FlutterAdPlugin.verboseLogging = true;
 
   // 初始化业务侧工具（如 Facebook SDK）
-  try {
-    await FacebookSDKUtil.initializeFacebookSDK(
-      appId: 'YOUR_FB_APP_ID',
-      clientToken: 'YOUR_FB_CLIENT_TOKEN',
-    );
-  } catch (e) {
-    debugPrint('FB Init Error: $e');
-  }
+  // try {
+  //   await FacebookSDKUtil.initializeFacebookSDK(
+  //     appId: 'YOUR_FB_APP_ID',
+  //     clientToken: 'YOUR_FB_CLIENT_TOKEN',
+  //   );
+  // } catch (e) {
+  //   debugPrint('FB Init Error: $e');
+  // }
 
   runApp(const FlutterAdPluginApp());
 }

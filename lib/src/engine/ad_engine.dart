@@ -1,7 +1,6 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
-import 'package:flutter_smart_dialog/flutter_smart_dialog.dart';
 
 import '../core/ad_config.dart';
 import '../core/ad_enums.dart';
@@ -35,15 +34,16 @@ class AdEngine {
 
   AdConfigRepository _configRepository = DefaultAdConfigRepository();
   AdEventReporter _reporter = DefaultAdEventReporter();
+  AdNotReadyCallback? _onAdNotReady;
   late final AdSdkInitializer _sdkInitializer;
   late final AdAdapterRegistry _adapterRegistry;
   final AdDisplayGuard _guard = AdDisplayGuard();
 
-  final Map<PlacementType, PlacementAdPool> _fullscreenPools = {};
+  final _AdPoolStore _fullscreenPool = _AdPoolStore();
   final Map<PlacementType, Future<bool>> _fullscreenLoadingFutures = {};
   final Map<PlacementType, Future<bool>> _nativeLoadingFutures = {};
 
-  final Map<PlacementType, PlacementAdPool> _nativePools = {};
+  final _AdPoolStore _nativePool = _AdPoolStore();
   final Map<PlacementType, Timer> _nativeRefreshTimers = {};
 
   AdConfigRepository get configRepository => _configRepository;
@@ -54,12 +54,14 @@ class AdEngine {
   Future<void> initWith({
     required AdConfigRepository configRepository,
     required AdEventReporter eventReporter,
+    AdNotReadyCallback? onAdNotReady,
   }) async {
     if (_initialized) {
       return;
     }
     _configRepository = configRepository;
     _reporter = eventReporter;
+    _onAdNotReady = onAdNotReady;
     await init();
   }
 
@@ -76,11 +78,9 @@ class AdEngine {
       AdmobNativeAdapter(),
     ]);
 
-    log.v('🏁 [engine] start');
     await _sdkInitializer.initAll();
     await _configRepository.getConfig();
     _initialized = true;
-    log.v('🏁 [engine] ready');
   }
 
   // --- Fullscreen Logic ---
@@ -93,37 +93,21 @@ class AdEngine {
     if (!config.hasPlacement(placement)) {
       var loaded = false;
       for (final common in config.commonPlacements) {
-        log.v(
-          '📥 [preload] common: request=${placement.name} '
-          'common=${common.name} event=$eventName',
-        );
         loaded = await preload(common, eventName: eventName) || loaded;
       }
       return loaded;
     }
 
     if (_fullscreenLoadingFutures.containsKey(placement)) {
-      log.v(
-        '📥 [preload] wait: placement=${placement.name} '
-        'event=$eventName',
-      );
       return await _fullscreenLoadingFutures[placement]!;
     }
 
-    final current = _fullscreenPools[placement];
+    final current = _fullscreenPool[placement];
     final targetCount = config.fullscreenCacheSizeFor(placement);
     if ((current?.count ?? 0) >= targetCount) {
-      log.v(
-        '📥 [preload] skip: placement=${placement.name} reason=has_cache '
-        'cached=${current?.count ?? 0}/$targetCount event=$eventName',
-      );
       return true;
     }
 
-    log.v(
-      '📥 [preload] start: placement=${placement.name} kind=fullscreen '
-      'cached=${current?.count ?? 0}/$targetCount event=$eventName',
-    );
     final loadFuture = _performFullscreenLoad(placement, eventName: eventName);
     _fullscreenLoadingFutures[placement] = loadFuture;
 
@@ -137,158 +121,27 @@ class AdEngine {
   Future<bool> _performFullscreenLoad(
     PlacementType placement, {
     required String eventName,
-  }) async {
-    final currentSlots = List<PlacementAdSlot>.of(
-      _fullscreenPools[placement]?.slots ?? const [],
-    );
-    _fullscreenPools[placement] = PlacementAdPool(
+  }) {
+    return _performLoad(
       placement: placement,
-      slots: currentSlots,
-      isLoading: true,
+      eventName: eventName,
+      kind: _AdLoadKind.fullscreen,
+      pool: _fullscreenPool,
+      targetCountFor: (config) => config.fullscreenCacheSizeFor(placement),
+      unitsFor: (config) {
+        final policy = config.getPolicy(placement);
+        return config
+            .getUnits(placement)
+            .where((unit) => unit.isValid)
+            .where((unit) => policy.supports(unit.type))
+            .where((unit) => unit.type.isFullscreen)
+            .where(
+              (unit) => !_fullscreenPool.hasCacheKey(placement, unit.cacheKey),
+            );
+      },
+      adapterTypeFor: (unit) => unit.type,
+      loadedTypeFor: (unit) => unit.type,
     );
-
-    try {
-      final config = await _configRepository.getConfig();
-      final policy = config.getPolicy(placement);
-      final targetCount = config.fullscreenCacheSizeFor(placement);
-      final units =
-          config
-              .getUnits(placement)
-              .where((unit) => unit.isValid)
-              .where((unit) => policy.supports(unit.type))
-              .where((unit) => unit.type.isFullscreen)
-              .where(
-                (unit) =>
-                    !_hasCachedAd(placement, unit.cacheKey, native: false),
-              )
-              .toList()
-            ..sort((a, b) => b.weight.compareTo(a.weight));
-
-      if (units.isEmpty) {
-        log.v(
-          '📥 [preload] empty: placement=${placement.name} '
-          'kind=fullscreen cached=${currentSlots.length}/$targetCount',
-        );
-        _fullscreenPools[placement] = PlacementAdPool(
-          placement: placement,
-          slots: currentSlots,
-        );
-        return false;
-      }
-
-      log.v(
-        '📥 [preload] candidates: placement=${placement.name} '
-        'kind=fullscreen units=${units.length} target=$targetCount',
-      );
-
-      Object? lastError;
-      for (final unit in units) {
-        log.v(
-          '📥 [preload] try: placement=${placement.name} '
-          'source=${unit.source.name} type=${unit.type.name} '
-          'id=${unit.id} weight=${unit.weight} cacheKey=${unit.cacheKey} '
-          'timeout=${config.loadTimeoutFor(unit).inSeconds}s '
-          'cached=${currentSlots.length}/$targetCount event=$eventName',
-        );
-        _reportEvent(
-          AdEventType.loadRequested,
-          placement,
-          unit.type,
-          unit.source,
-          unit.id,
-          eventName: eventName,
-        );
-
-        final adapter = _adapterRegistry.get(unit.source, unit.type);
-        final result = await adapter.load(
-          placement: placement,
-          unit: unit,
-          timeout: config.loadTimeoutFor(unit),
-          reporter: _reporter,
-          eventName: eventName,
-          onLateAdLoaded: (ad, type, adUnitId) => unawaited(
-            _handleLateAd(
-              placement,
-              ad,
-              type,
-              adUnitId,
-              unit.cacheKey,
-              unit.source,
-            ),
-          ),
-        );
-
-        if (result.isSuccess) {
-          final loadedSlot = PlacementAdSlot(
-            placement: placement,
-            ad: result.ad,
-            loadedSource: unit.source,
-            loadedType: unit.type,
-            adUnitId: unit.id,
-            cacheKey: unit.cacheKey,
-            loadedAt: DateTime.now(),
-          );
-          currentSlots.add(loadedSlot);
-          _fullscreenPools[placement] = PlacementAdPool(
-            placement: placement,
-            slots: List.unmodifiable(currentSlots),
-          );
-          _reportEvent(
-            AdEventType.loadSucceeded,
-            placement,
-            unit.type,
-            unit.source,
-            unit.id,
-            eventName: eventName,
-          );
-          log.v(
-            '✅ [preload] success: placement=${placement.name} '
-            'source=${unit.source.name} type=${unit.type.name} id=${unit.id} '
-            'cached=${currentSlots.length}/$targetCount',
-          );
-          if (currentSlots.length >= targetCount) {
-            return true;
-          }
-          continue;
-        }
-
-        lastError = result.error;
-        log.v(
-          '❌ [preload] fail: placement=${placement.name} '
-          'source=${unit.source.name} type=${unit.type.name} id=${unit.id} '
-          'cached=${currentSlots.length}/$targetCount error=$lastError',
-        );
-        _reportEvent(
-          AdEventType.loadFailed,
-          placement,
-          unit.type,
-          unit.source,
-          unit.id,
-          errorReason: lastError?.toString(),
-          eventName: eventName,
-        );
-      }
-
-      log.v(
-        '❌ [preload] exhausted: placement=${placement.name} '
-        'kind=fullscreen cached=${currentSlots.length}/$targetCount '
-        'lastError=$lastError',
-      );
-      _fullscreenPools[placement] = PlacementAdPool(
-        placement: placement,
-        slots: List.unmodifiable(currentSlots),
-        lastError: lastError,
-      );
-      return currentSlots.isNotEmpty;
-    } catch (e) {
-      log.e('❌ [preload] fatal: placement=${placement.name} error=$e');
-      _fullscreenPools[placement] = PlacementAdPool(
-        placement: placement,
-        slots: currentSlots,
-        lastError: e,
-      );
-      return currentSlots.isNotEmpty;
-    }
   }
 
   Future<void> _handleLateAd(
@@ -303,41 +156,25 @@ class AdEngine {
     final targetCount = type.isNative
         ? config.nativeCacheSizeFor(placement)
         : config.fullscreenCacheSizeFor(placement);
-    final pools = type.isNative ? _nativePools : _fullscreenPools;
-    final current = pools[placement];
-    final hasSameAd =
-        current?.slots.any((slot) => slot.cacheKey == cacheKey) == true;
+    final pool = type.isNative ? _nativePool : _fullscreenPool;
+    final current = pool[placement];
+    final hasSameAd = pool.hasCacheKey(placement, cacheKey);
     if (hasSameAd || (current?.count ?? 0) >= targetCount) {
-      log.v(
-        '📥 [late_load] discard: placement=${placement.name} '
-        'source=${source.name} type=${type.name} id=$adUnitId '
-        'cacheKey=$cacheKey cached=${current?.count ?? 0}/$targetCount '
-        'reason=${hasSameAd ? 'duplicate' : 'pool_full'}',
-      );
       _adapterRegistry.get(source, type).dispose(ad);
       return;
     }
 
-    log.v(
-      '📥 [late_load] accept: placement=${placement.name} '
-      'source=${source.name} type=${type.name} id=$adUnitId '
-      'cacheKey=$cacheKey cached=${current?.count ?? 0}/$targetCount',
-    );
-    final slots = List<PlacementAdSlot>.of(current?.slots ?? const [])
-      ..add(
-        PlacementAdSlot(
-          placement: placement,
-          ad: ad,
-          loadedSource: source,
-          loadedType: type,
-          adUnitId: adUnitId,
-          cacheKey: cacheKey,
-          loadedAt: DateTime.now(),
-        ),
-      );
-    pools[placement] = PlacementAdPool(
-      placement: placement,
-      slots: List.unmodifiable(slots),
+    pool.add(
+      placement,
+      PlacementAdSlot(
+        placement: placement,
+        ad: ad,
+        loadedSource: source,
+        loadedType: type,
+        adUnitId: adUnitId,
+        cacheKey: cacheKey,
+        loadedAt: DateTime.now(),
+      ),
     );
   }
 
@@ -348,10 +185,6 @@ class AdEngine {
     VoidCallback? onAdShowed,
   }) async {
     final placementValue = placementLabel ?? placement.name;
-    log.v(
-      '🚀 [show] request: placement=${placement.name} '
-      'label=$placementValue event=$eventName',
-    );
     final adConfig = await config;
     final requestPlacement = placement;
     final showPlacement = _resolveShowPlacement(adConfig, requestPlacement);
@@ -360,10 +193,10 @@ class AdEngine {
     final preferHighValue =
         !isFallbackPlacement && policy.preferHighValueOnShow;
     log.v(
-      '🚀 [show] resolved: request=${requestPlacement.name} '
-      'show=${showPlacement.name} commonResolved=$isFallbackPlacement '
-      'waitForLoad=${policy.waitForLoadOnShow} '
-      'preferHighValue=$preferHighValue',
+      '🚀 [show] request: request=${requestPlacement.name} '
+      'label=$placementValue show=${showPlacement.name} '
+      'commonResolved=$isFallbackPlacement '
+      'event=$eventName waitForLoad=${policy.waitForLoadOnShow}',
     );
 
     final guardResult = await _guard.canShow(
@@ -377,7 +210,7 @@ class AdEngine {
       return false;
     }
 
-    if (!(_fullscreenPools[showPlacement]?.hasAd ?? false)) {
+    if (!_fullscreenPool.hasAd(showPlacement)) {
       if (policy.waitForLoadOnShow) {
         log.v(
           '📥 [show] no_cache, try_preload: placement=${showPlacement.name} '
@@ -385,7 +218,10 @@ class AdEngine {
         );
         await preload(showPlacement, eventName: eventName);
       } else {
-        log.v('📥 [show] no_cache, skip_wait: placement=${showPlacement.name}');
+        log.v(
+          '📥 [show] no_cache, skip_wait: placement=${showPlacement.name} '
+          'event=$eventName',
+        );
       }
     }
 
@@ -401,9 +237,17 @@ class AdEngine {
         '❌ [show] failed: reason=no_cache request=${requestPlacement.name} '
         'show=${showPlacement.name}',
       );
-      if (policy.showNotReadyToast) {
-        SmartDialog.showToast(
-          policy.notReadyMsg ?? 'The ad is not ready, please try again later.',
+      if (policy.showNotReadyToast && _onAdNotReady != null) {
+        _onAdNotReady!(
+          AdNotReadyEvent(
+            requestedPlacement: requestPlacement,
+            showPlacement: showPlacement,
+            placementLabel: placementLabel,
+            eventName: eventName,
+            message:
+                policy.notReadyMsg ??
+                'The ad is not ready, please try again later.',
+          ),
         );
       }
       return false;
@@ -428,8 +272,7 @@ class AdEngine {
     final showPlacement = _resolveShowPlacement(adConfig, placement);
     final policy = adConfig.getPolicy(showPlacement);
 
-    if (!(_fullscreenPools[showPlacement]?.hasAd ?? false) &&
-        policy.waitForLoadOnShow) {
+    if (!_fullscreenPool.hasAd(showPlacement) && policy.waitForLoadOnShow) {
       await preload(showPlacement, eventName: eventName);
     }
 
@@ -452,11 +295,11 @@ class AdEngine {
     );
 
     if (secondSlot == null) {
-      final refillFuture = _preloadMissingConfiguredSlot(
-        showPlacement,
-        firstSlot,
-        eventName: eventName,
+      log.v(
+        '📥 [show_sequence] missing second slot: placement=${showPlacement.name} '
+        'event=$eventName',
       );
+      final refillFuture = preload(showPlacement, eventName: eventName);
       final firstShown = await _showSlot(
         slot: firstSlot,
         reportPlacement: showPlacement,
@@ -516,38 +359,21 @@ class AdEngine {
     if (!config.hasPlacement(placement)) {
       var loaded = false;
       for (final common in config.commonPlacements) {
-        log.v(
-          '📥 [preload] common: request=native:${placement.name} '
-          'common=native:${common.name} event=$eventName',
-        );
         loaded = await preloadNative(common, eventName: eventName) || loaded;
       }
       return loaded;
     }
 
     if (_nativeLoadingFutures.containsKey(placement)) {
-      log.v(
-        '📥 [preload] wait: placement=${placement.name} kind=native '
-        'event=$eventName',
-      );
       return await _nativeLoadingFutures[placement]!;
     }
 
-    final current = _nativePools[placement];
+    final current = _nativePool[placement];
     final targetCount = config.nativeCacheSizeFor(placement);
     if ((current?.count ?? 0) >= targetCount) {
-      log.v(
-        '📥 [preload] skip: placement=${placement.name} kind=native '
-        'reason=has_cache cached=${current?.count ?? 0}/$targetCount '
-        'event=$eventName',
-      );
       return true;
     }
 
-    log.v(
-      '📥 [preload] start: placement=${placement.name} kind=native '
-      'cached=${current?.count ?? 0}/$targetCount event=$eventName',
-    );
     final loadFuture = _performNativeLoad(placement, eventName: eventName);
     _nativeLoadingFutures[placement] = loadFuture;
 
@@ -561,41 +387,65 @@ class AdEngine {
   Future<bool> _performNativeLoad(
     PlacementType placement, {
     required String eventName,
-  }) async {
-    final currentSlots = List<PlacementAdSlot>.of(
-      _nativePools[placement]?.slots ?? const [],
-    );
-    _nativePools[placement] = PlacementAdPool(
+  }) {
+    return _performLoad(
       placement: placement,
-      slots: currentSlots,
-      isLoading: true,
+      eventName: eventName,
+      kind: _AdLoadKind.native,
+      pool: _nativePool,
+      targetCountFor: (config) => config.cacheSizeFor(placement),
+      unitsFor: (config) {
+        final policy = config.getPolicy(placement);
+        return config
+            .getUnits(placement)
+            .where((unit) => unit.isValid && policy.supports(unit.type))
+            .where((unit) => unit.type.isNative)
+            .where(
+              (unit) => !_nativePool.hasCacheKey(placement, unit.cacheKey),
+            );
+      },
+      adapterTypeFor: (_) => AdType.native,
+      loadedTypeFor: (_) => AdType.native,
+      onLoaded: (unit) {
+        _scheduleNativeRefresh(
+          placement,
+          unit.refreshMinutes,
+          eventName: eventName,
+        );
+      },
     );
+  }
+
+  Future<bool> _performLoad({
+    required PlacementType placement,
+    required String eventName,
+    required _AdLoadKind kind,
+    required _AdPoolStore pool,
+    required int Function(AdConfig config) targetCountFor,
+    required Iterable<AdUnitConfig> Function(AdConfig config) unitsFor,
+    required AdType Function(AdUnitConfig unit) adapterTypeFor,
+    required AdType Function(AdUnitConfig unit) loadedTypeFor,
+    void Function(AdUnitConfig unit)? onLoaded,
+  }) async {
+    final currentSlots = pool.beginLoading(placement);
 
     try {
       final config = await _configRepository.getConfig();
-      final policy = config.getPolicy(placement);
-      final targetCount = config.cacheSizeFor(placement);
-      final units =
-          config
-              .getUnits(placement)
-              .where((u) => u.isValid && policy.supports(u.type))
-              .where((u) => u.type.isNative)
-              .where((u) => !_hasCachedAd(placement, u.cacheKey, native: true))
-              .toList()
-            ..sort((a, b) => b.weight.compareTo(a.weight));
+      final targetCount = targetCountFor(config);
+      final units = unitsFor(config).toList()
+        ..sort((a, b) => b.weight.compareTo(a.weight));
 
-      log.v(
-        '📥 [preload] candidates: placement=${placement.name} '
-        'kind=native units=${units.length} target=$targetCount',
-      );
-      for (final unit in units) {
+      if (units.isEmpty) {
         log.v(
-          '📥 [preload] try: placement=${placement.name} '
-          'source=${unit.source.name} type=${unit.type.name} '
-          'id=${unit.id} weight=${unit.weight} cacheKey=${unit.cacheKey} '
-          'timeout=${config.loadTimeoutFor(unit).inSeconds}s '
-          'cached=${currentSlots.length}/$targetCount event=$eventName',
+          '📥 [preload] exhausted: placement=${placement.name} '
+          'kind=${kind.name} reason=no_units event=$eventName',
         );
+        pool.setSlots(placement, currentSlots);
+        return false;
+      }
+
+      Object? lastError;
+      for (final unit in units) {
         _reportEvent(
           AdEventType.loadRequested,
           placement,
@@ -604,45 +454,42 @@ class AdEngine {
           unit.id,
           eventName: eventName,
         );
-        final adapter = _adapterRegistry.get(unit.source, AdType.native);
-        final result = await adapter.load(
-          placement: placement,
-          unit: unit,
-          timeout: config.loadTimeoutFor(unit),
-          reporter: _reporter,
-          eventName: eventName,
-          onLateAdLoaded: (ad, type, adUnitId) => unawaited(
-            _handleLateAd(
-              placement,
-              ad,
-              type,
-              adUnitId,
-              unit.cacheKey,
-              unit.source,
-            ),
-          ),
-        );
+
+        final adapterType = adapterTypeFor(unit);
+        final result = await _adapterRegistry
+            .get(unit.source, adapterType)
+            .load(
+              placement: placement,
+              unit: unit,
+              timeout: config.loadTimeoutFor(unit),
+              reporter: _reporter,
+              eventName: eventName,
+              onLateAdLoaded: (ad, type, adUnitId) => unawaited(
+                _handleLateAd(
+                  placement,
+                  ad,
+                  type,
+                  adUnitId,
+                  unit.cacheKey,
+                  unit.source,
+                ),
+              ),
+            );
 
         if (result.isSuccess) {
-          final loadedSlot = PlacementAdSlot(
-            placement: placement,
-            ad: result.ad,
-            loadedSource: unit.source,
-            loadedType: AdType.native,
-            adUnitId: unit.id,
-            cacheKey: unit.cacheKey,
-            loadedAt: DateTime.now(),
+          currentSlots.add(
+            PlacementAdSlot(
+              placement: placement,
+              ad: result.ad,
+              loadedSource: unit.source,
+              loadedType: loadedTypeFor(unit),
+              adUnitId: unit.id,
+              cacheKey: unit.cacheKey,
+              loadedAt: DateTime.now(),
+            ),
           );
-          currentSlots.add(loadedSlot);
-          _nativePools[placement] = PlacementAdPool(
-            placement: placement,
-            slots: List.unmodifiable(currentSlots),
-          );
-          _scheduleNativeRefresh(
-            placement,
-            unit.refreshMinutes,
-            eventName: eventName,
-          );
+          pool.setSlots(placement, currentSlots);
+          onLoaded?.call(unit);
           _reportEvent(
             AdEventType.loadSucceeded,
             placement,
@@ -652,39 +499,37 @@ class AdEngine {
             eventName: eventName,
           );
           if (currentSlots.length >= targetCount) {
-            log.v(
-              '✅ [preload] success: placement=${placement.name} '
-              'kind=native cached=${currentSlots.length}/$targetCount',
-            );
             return true;
           }
+          continue;
         }
-      }
-      _nativePools[placement] = PlacementAdPool(
-        placement: placement,
-        slots: List.unmodifiable(currentSlots),
-      );
-      if (currentSlots.isNotEmpty) {
-        log.v(
-          '✅ [preload] partial: placement=${placement.name} '
-          'kind=native cached=${currentSlots.length}/$targetCount',
+
+        lastError = result.error;
+        _reportEvent(
+          AdEventType.loadFailed,
+          placement,
+          unit.type,
+          unit.source,
+          unit.id,
+          errorReason: lastError?.toString(),
+          eventName: eventName,
         );
-      } else {
+      }
+
+      pool.setSlots(placement, currentSlots, lastError: lastError);
+      if (currentSlots.isEmpty) {
         log.v(
           '❌ [preload] exhausted: placement=${placement.name} '
-          'kind=native cached=0/$targetCount',
+          'kind=${kind.name} event=$eventName lastError=$lastError',
         );
       }
       return currentSlots.isNotEmpty;
     } catch (e) {
       log.e(
-        '❌ [preload] fatal: placement=${placement.name} kind=native error=$e',
+        '❌ [preload] fatal: placement=${placement.name} '
+        'kind=${kind.name} error=$e',
       );
-      _nativePools[placement] = PlacementAdPool(
-        placement: placement,
-        slots: currentSlots,
-        lastError: e,
-      );
+      pool.setSlots(placement, currentSlots, lastError: e);
       return currentSlots.isNotEmpty;
     }
   }
@@ -694,7 +539,7 @@ class AdEngine {
     String? placementLabel,
     required String eventName,
   }) {
-    final slot = _nativePools[placement]?.slots.firstOrNull;
+    final slot = _nativePool.slots(placement).firstOrNull;
     if (slot == null) {
       return null;
     }
@@ -713,9 +558,7 @@ class AdEngine {
     String? placementLabel,
     required String eventName,
   }) {
-    final slots =
-        _nativePools[placement]?.slots.take(count).toList() ??
-        const <PlacementAdSlot>[];
+    final slots = _nativePool.slots(placement).take(count).toList();
     for (final slot in slots) {
       _attributeNativeSlot(
         slot,
@@ -736,47 +579,13 @@ class AdEngine {
     _nativeRefreshTimers[placement] = Timer(
       Duration(minutes: minutes ?? 40),
       () {
-        _nativePools.remove(placement);
+        _nativePool.remove(placement);
         preloadNative(placement, eventName: eventName);
       },
     );
   }
 
   // --- Helpers ---
-
-  bool _hasCachedAd(
-    PlacementType placement,
-    String cacheKey, {
-    required bool native,
-  }) {
-    final pool = native ? _nativePools[placement] : _fullscreenPools[placement];
-    return pool?.slots.any((slot) => slot.cacheKey == cacheKey) == true;
-  }
-
-  void _removeCachedAd(
-    PlacementType placement,
-    PlacementAdSlot slot, {
-    required bool native,
-  }) {
-    final pools = native ? _nativePools : _fullscreenPools;
-    final current = pools[placement];
-    if (current == null) {
-      return;
-    }
-
-    final slots = current.slots
-        .where((item) => !identical(item.ad, slot.ad))
-        .toList();
-    if (slots.isEmpty) {
-      pools.remove(placement);
-      return;
-    }
-
-    pools[placement] = PlacementAdPool(
-      placement: placement,
-      slots: List.unmodifiable(slots),
-    );
-  }
 
   PlacementType _resolveShowPlacement(
     AdConfig config,
@@ -804,40 +613,27 @@ class AdEngine {
         highValuePlacement,
         excludedSlots: excludedSlots,
       );
-      final configuredSlots =
-          _fullscreenPools[showPlacement]?.slots ?? const [];
+      final configuredSlots = _fullscreenPool.slots(showPlacement);
       final configuredFirst = configuredSlots.firstOrNull;
       final shouldUseHighValue =
           highValueSlot != null &&
           (configuredFirst?.loadedType?.isFullscreen ?? true);
       if (shouldUseHighValue) {
-        log.v(
-          '🚀 [show] select_high_value: request=${requestedPlacement.name} '
-          'show=${showPlacement.name} highValue=${highValuePlacement.name} '
-          'id=${highValueSlot.adUnitId} type=${highValueSlot.loadedType?.name}',
-        );
         return highValueSlot;
       }
     }
 
-    final slot = _firstUsableFullscreenSlot(
+    return _firstUsableFullscreenSlot(
       showPlacement,
       excludedSlots: excludedSlots,
     );
-    if (slot != null) {
-      log.v(
-        '🚀 [show] select_configured: placement=${showPlacement.name} '
-        'id=${slot.adUnitId} type=${slot.loadedType?.name}',
-      );
-    }
-    return slot;
   }
 
   PlacementAdSlot? _firstUsableFullscreenSlot(
     PlacementType placement, {
     Set<PlacementAdSlot> excludedSlots = const {},
   }) {
-    final slots = _fullscreenPools[placement]?.slots ?? const [];
+    final slots = _fullscreenPool.slots(placement);
     for (final slot in slots) {
       if (!excludedSlots.contains(slot) &&
           slot.ad != null &&
@@ -860,12 +656,6 @@ class AdEngine {
     final slotPolicy = adConfig.getPolicy(slotPlacement);
     final adapter = _adapterRegistry.get(slot.loadedSource!, slot.loadedType!);
 
-    log.v(
-      '🚀 [show] start: reportPlacement=${reportPlacement.name} '
-      'cachePlacement=${slotPlacement.name} source=${slot.loadedSource?.name} '
-      'type=${slot.loadedType?.name} id=${slot.adUnitId} '
-      'event=$eventName',
-    );
     _guard.markShowStarted(slotPlacement, slotPolicy);
     final result = await adapter.show(
       placement: reportPlacement,
@@ -875,15 +665,11 @@ class AdEngine {
       reporter: _reporter,
       onAdShowed: onAdShowed,
       onClosed: () {
-        _removeCachedAd(slotPlacement, slot, native: false);
+        _fullscreenPool.removeSlot(slotPlacement, slot);
         unawaited(preload(slotPlacement, eventName: eventName));
       },
     );
     if (result.shown) {
-      log.v(
-        '✅ [show] completed: reportPlacement=${reportPlacement.name} '
-        'cachePlacement=${slotPlacement.name} id=${slot.adUnitId}',
-      );
       _guard.markShowCompleted(slotPlacement, slotPolicy);
     } else {
       log.v(
@@ -892,21 +678,9 @@ class AdEngine {
         'error=${result.error}',
       );
       _guard.markShowFailed(slotPlacement, slotPolicy);
-      _removeCachedAd(slotPlacement, slot, native: false);
+      _fullscreenPool.removeSlot(slotPlacement, slot);
     }
     return result.shown;
-  }
-
-  Future<void> _preloadMissingConfiguredSlot(
-    PlacementType placement,
-    PlacementAdSlot existingSlot, {
-    required String eventName,
-  }) async {
-    log.v(
-      '📥 [show_sequence] refill missing pair: ${placement.name} '
-      'existing=${existingSlot.adUnitId}',
-    );
-    await preload(placement, eventName: eventName);
   }
 
   void _attributeNativeSlot(
@@ -956,10 +730,6 @@ class AdEngine {
   }) async {
     final c = await _configRepository.getConfig();
     final list = placements.toSet();
-    log.v(
-      '📥 [preload_batch] start: placements=${list.map((p) => p.name).join(',')} '
-      'event=$eventName',
-    );
 
     for (final p in list) {
       final units = c.getUnits(p);
@@ -972,3 +742,61 @@ class AdEngine {
     }
   }
 }
+
+class _AdPoolStore {
+  final Map<PlacementType, PlacementAdPool> _pools = {};
+
+  PlacementAdPool? operator [](PlacementType placement) => _pools[placement];
+
+  bool hasAd(PlacementType placement) => _pools[placement]?.hasAd ?? false;
+
+  List<PlacementAdSlot> slots(PlacementType placement) =>
+      _pools[placement]?.slots ?? const [];
+
+  bool hasCacheKey(PlacementType placement, String cacheKey) {
+    return slots(placement).any((slot) => slot.cacheKey == cacheKey);
+  }
+
+  List<PlacementAdSlot> beginLoading(PlacementType placement) {
+    final currentSlots = List<PlacementAdSlot>.of(slots(placement));
+    _pools[placement] = PlacementAdPool(
+      placement: placement,
+      slots: currentSlots,
+      isLoading: true,
+    );
+    return currentSlots;
+  }
+
+  void setSlots(
+    PlacementType placement,
+    List<PlacementAdSlot> slots, {
+    Object? lastError,
+  }) {
+    if (slots.isEmpty && lastError == null) {
+      _pools.remove(placement);
+      return;
+    }
+    _pools[placement] = PlacementAdPool(
+      placement: placement,
+      slots: List.unmodifiable(slots),
+      lastError: lastError,
+    );
+  }
+
+  void add(PlacementType placement, PlacementAdSlot slot) {
+    setSlots(placement, [...slots(placement), slot]);
+  }
+
+  void remove(PlacementType placement) {
+    _pools.remove(placement);
+  }
+
+  void removeSlot(PlacementType placement, PlacementAdSlot slot) {
+    final kept = slots(
+      placement,
+    ).where((item) => !identical(item.ad, slot.ad)).toList();
+    setSlots(placement, kept);
+  }
+}
+
+enum _AdLoadKind { fullscreen, native }

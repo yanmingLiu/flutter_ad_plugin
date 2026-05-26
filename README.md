@@ -1,204 +1,44 @@
-## 架构设计 (Architecture)
+# flutter_ad_plugin
 
-本项目采用了高度解耦的插件化架构，确保业务逻辑、配置管理与具体的广告平台 SDK 彻底分离。
+一个可复用的 Flutter 广告编排包。当前实现以 AdMob 为广告源，广告位、候选广告、缓存数量、展示策略和埋点场景都由宿主传入的 JSON / Repository 决定。
 
-配置与策略由 JSON 驱动，埋点由宿主注入。
+设计目标是保持 Dart 风格的小型架构：插件只做广告编排，不内置业务云控、弹窗库、埋点 SDK 或 App 生命周期监听。
 
-### 架构图
+## 目录
 
-```mermaid
-flowchart TD
-  App["Host App"] --> Facade["FlutterAdPlugin"]
-  Facade --> Service["AdService"]
-  Service --> Repo["AdConfigRepository"]
-  Service --> Reporter["AdEventReporter"]
-  Service --> Guard["AdDisplayGuard"]
-  Service --> Full["FullscreenAdController"]
-  Service --> Native["NativeAdController"]
-  Repo --> Parser["AdConfigParser(JSON)"]
-  Full --> Registry["AdAdapterRegistry"]
-  Native --> Registry
-  Registry --> AdmobOpen["AdmobOpenAdapter"]
-  Registry --> AdmobInt["AdmobInterstitialAdapter"]
-  Registry --> AdmobRew["AdmobRewardedAdapter"]
-  Registry --> AdmobNative["AdmobNativeAdapter"]
-```
+- [设计目标与能力边界](#goals)
+- [快速接入](#quick-start)
+- [常用 API](#api)
+- [整体架构](#architecture)
+- [接入指南](#integration)
+- [广告配置 JSON](#ad-config)
+- [展示时序](#sequence)
+- [Example 与验证](#example)
 
-### 分层说明
+<a id="goals"></a>
+## 设计目标与能力边界
 
-1. **Core (核心层)**:
-   - **伪枚举系统**: 使用类包装 String（如 `PlacementType`），支持运行时动态新增广告位，无需修改插件代码。
-   - **配置模型**: 定义了 `AdUnitConfig` 和 `PlacementPolicy`，所有广告行为（超时、CD、模板）均由配置驱动。
+### 能力
 
-2. **Engine (引擎层)**:
-   - **AdEngine**: 单例入口，负责协调预加载、展示控制和缓存管理。
-   - **AdDisplayGuard**: 自动拦截违规展示请求。支持同一广告位冷却（Same CD）和全局全屏冷却（Global CD）。
-   - **预加载能力**: 插件提供单广告位和批量预加载 API；冷启动要加载哪些广告位由宿主决定。
+- JSON 驱动广告位：新增 placement 只需要改配置，不需要改插件代码。
+- 宿主注入配置：实现 `AdConfigRepository`，可以接接口、Firebase Remote Config、本地缓存或纯本地 Map。
+- 宿主注入埋点：实现 `AdEventReporter`，插件只透传生命周期事件和 `eventName`。
+- 支持开屏、插屏、激励、原生、双原生组合。
+- 支持同广告位多 ID 缓存、公共兜底位、高价位替换、展示冷却策略。
+- `preloadPlacements()` 是 fire-and-forget，只负责发起批量预加载，不等待所有广告加载完成。
 
-3. **Platform (适配层)**:
-   - **AdTypeAdapter**: 核心抽象接口。无论是 AdMob、AppLovin 还是 TopOn，只需实现对应的 Adapter 即可接入。
-   - **泛型抹平**: 内部使用 `Object` 容器，业务层无需感知底层 SDK 的具体类（如 `AppOpenAd` 或 `InterstitialAd`）。
+### 边界
 
-4. **UI (组件层)**:
-   - **NativeAdView**: 统一的原生广告容器，支持根据传入的广告对象自动路由到对应的渲染逻辑。
+- 插件不内置业务云控。
+- 插件不内置弹窗库。
+- 插件不内置 Firebase / Facebook / AppsFlyer / Adjust 等埋点 SDK。
+- 插件不监听 App 前后台切换；热启动开屏由宿主接 `AppStateEventNotifier` 后调用 `show()`。
+- `example/` 只是接入样例，不是插件核心架构的一部分。
 
-### 动态规则
+<a id="quick-start"></a>
+## 快速接入
 
-`AdConfigParser` 解析 JSON 后，运行时按配置动态决策：
-
-- placement 候选能力：从该 placement 的 `type` 列表推导
-- 展示策略：优先读 `placement_policy`，否则按候选类型推导默认值
-
-这意味着宿主主要通过 JSON 控制行为，不再需要维护静态能力/策略表。
-
-### iOS/Android 原生广告
-
-- Android：`HomeNativeAdFactory.kt`
-- iOS：`HomeNativeAdFactory.swift`
-- 统一 `factoryId = homeListTile`
-
----
-
-## Quick Start
-
-```dart
-import 'package:flutter_ad_plugin/flutter_ad_plugin.dart';
-import 'package:flutter_ad_plugin/ad/analytics/ad_event_reporter.dart';
-import 'package:flutter_ad_plugin/ad/config/ad_config_repository.dart';
-
-await FlutterAdPlugin.init(
-  configRepository: DefaultAdConfigRepository(),
-  eventReporter: DefaultAdEventReporter(),
-);
-
-// 宿主按业务决定冷启动要预加载哪些广告位
-await FlutterAdPlugin.preloadPlacements(
-  const [
-    PlacementType('open'),
-    PlacementType('home'),
-    PlacementType('message'),
-  ],
-  eventName: 'open_cold',
-);
-
-// 直接展示即可；是否在无缓存时等待加载由 placement_policy.wait_for_load_on_show 控制
-const openPlacement = PlacementType('open');
-final shown = await FlutterAdPlugin.show(openPlacement, eventName: 'open_cold');
-```
-
-### 广告场景 (eventName)
-
-`preload()`、`preloadPlacements()`、`show()`、`showSequence()`、`loadNative()`、`getNativeAd()`、`getNativeAds()` 都必须传入 `eventName`。插件不生成默认值，也不规定外部埋点字段名，只负责把 `eventName` 原样带出到 `AdEvent`。宿主需要上报 `ad_screen`、`ad_sense` 或其他字段时，在自己的 `AdEventReporter` 里映射即可。
-
-```dart
-// 冷启动开屏
-await FlutterAdPlugin.show(openPlacement, eventName: 'open_cold');
-
-// 热启动开屏（从后台返回）
-await FlutterAdPlugin.show(openPlacement, eventName: 'open_hot');
-
-// 冷启动批量预加载
-await FlutterAdPlugin.preloadPlacements(
-  const [PlacementType('open'), PlacementType('home')],
-  eventName: 'open_cold',
-);
-
-// 手动预加载传入业务自己的广告场景
-await FlutterAdPlugin.preload(homePlacement, eventName: 'manual_load');
-
-// 新用户首次加载原生广告
-await FlutterAdPlugin.loadNative(homePlacement, eventName: 'first_load');
-
-// 原生广告展示归因，用于后续 onPaidEvent 收益上报
-final ad = FlutterAdPlugin.getNativeAd(
-  homePlacement,
-  eventName: 'play_middle',
-);
-```
-
-reporter 中通过 `event.eventName` 获取：
-```dart
-print('event_name=${event.eventName}'); // 'open_cold' / 'open_hot' / 'cold_load' ...
-```
-
-也可以直接打印或上报结构化 JSON：
-
-```dart
-debugPrint(jsonEncode(event.toJson()));
-```
-
-### 日志级别
-
-默认日志只输出广告流程的关键节点：批量预加载入口、单广告位预加载入口、等待/跳过、失败、展示、关闭和收益。候选广告列表、逐个 ID 的加载尝试、SDK loaded 成功回调等重复成功路径默认不输出。
-
-需要排查完整加载链路时打开详细日志：
-
-```dart
-FlutterAdPlugin.verboseLogging = true;
-```
-
-### 热启动开屏（App 前后台切换）
-
-插件不再内置生命周期监听，宿主通过 AdMob `AppStateEventNotifier` 自行处理。
-
-参考 demo 中的 `AdLifecycle` 封装：
-
-```dart
-import 'dart:async';
-import 'package:google_mobile_ads/google_mobile_ads.dart';
-
-class AdLifecycle {
-  AdLifecycle({required this.onForeground});
-
-  final void Function() onForeground;
-  StreamSubscription<AppState>? _sub;
-
-  void start() {
-    AppStateEventNotifier.startListening();
-    _sub = AppStateEventNotifier.appStateStream.listen((state) {
-      if (state == AppState.foreground) {
-        onForeground();
-      }
-    });
-  }
-
-  void dispose() {
-    _sub?.cancel();
-    _sub = null;
-  }
-}
-```
-
-在页面中使用：
-
-```dart
-class HomePageState extends State<HomePage> {
-  late final AdLifecycle _lifecycle;
-
-  @override
-  void initState() {
-    super.initState();
-    _lifecycle = AdLifecycle(onForeground: () {
-      FlutterAdPlugin.show(openPlacement, eventName: 'open_hot');
-    });
-    _lifecycle.start();
-  }
-
-  @override
-  void dispose() {
-    _lifecycle.dispose();
-    super.dispose();
-  }
-}
-```
-
-> `AppStateEventNotifier` 能精准识别前后台切换，自动处理广告关闭导致的回弹问题（比 `WidgetsBindingObserver` 更准确）。`AdDisplayGuard` 内置 CD 冷却，频繁切换也不会重复展示。
-
----
-
-## 接入指南
-
-### 1) 依赖接入
+### 安装
 
 ```yaml
 dependencies:
@@ -208,45 +48,208 @@ dependencies:
       ref: v0.1.0
 ```
 
-### 2) 初始化（注入配置和埋点）
+### 最小代码
 
 ```dart
+import 'package:flutter_ad_plugin/flutter_ad_plugin.dart';
+
 await FlutterAdPlugin.init(
-  configRepository: MyConfigRepository(),
+  configRepository: DefaultAdConfigRepository(localConfig: adConfigJson),
   eventReporter: MyAdEventReporter(),
+  onAdNotReady: (event) {
+    // 插件不依赖弹窗库。宿主按自己的 UI 体系弹 toast/snackbar/dialog。
+  },
+);
+
+FlutterAdPlugin.preloadPlacements(
+  const [
+    PlacementType('open'),
+    PlacementType('home'),
+    PlacementType('message'),
+  ],
+  eventName: 'open_cold',
+);
+
+final shown = await FlutterAdPlugin.show(
+  const PlacementType('open'),
+  eventName: 'open_cold',
 );
 ```
 
-如果需要把广告收入同步到 Meta/Facebook App Events，先在宿主云控拿到 Facebook `appId` / `clientToken` 后初始化：
+`eventName` 是宿主定义的广告场景。插件不生成默认值，也不规定埋点字段名，只会原样带到 `AdEvent.eventName`。
+
+<a id="api"></a>
+## 常用 API
+
+| API | 用途 | await 语义 |
+|---|---|---|
+| `init()` | 注入配置、埋点和未准备回调 | 等待 SDK 与配置初始化 |
+| `preload()` | 预加载单个全屏广告位 | 等待本次加载链路结束 |
+| `preloadPlacements()` | 批量发起预加载 | fire-and-forget，不等加载完成 |
+| `show()` | 展示单个全屏广告 | 等广告关闭或展示失败后返回 |
+| `showSequence()` | 连续展示同一广告位下两个全屏缓存 | 逐个等待关闭 |
+| `loadNative()` | 预加载原生广告 | 等待本次加载链路结束 |
+| `getNativeAd()` | 取单个原生缓存并更新展示归因 | 同步返回 |
+| `getNativeAds()` | 取多个原生缓存，用于双原生 | 同步返回 |
+
+### 原生广告
 
 ```dart
-await FlutterAdPlugin.initFacebookSDK(
-  appId: facebookAppIdFromRemoteConfig,
-  clientToken: facebookClientTokenFromRemoteConfig,
+const homePlacement = PlacementType('home');
+
+await FlutterAdPlugin.loadNative(homePlacement, eventName: 'first_load');
+
+final ad = FlutterAdPlugin.getNativeAd(
+  homePlacement,
+  eventName: 'home_show',
 );
+
+if (ad != null) {
+  NativeAdView(ad: ad, height: 280);
+}
 ```
 
-初始化时机建议：
-
-- 先完成云控拉取，再调用 `initFacebookSDK`
-- 不要在 paid 回调里临时初始化 Facebook SDK
-- 如果开屏广告收入回调早于 SDK 初始化完成，默认实现会缓存最多 50 条收入事件，初始化成功后 flush
-
-### 埋点接入
-
-插件不会绑定具体埋点平台，宿主项目需要实现 `AdEventReporter` 并在初始化时注入。
+双原生：
 
 ```dart
-import 'package:flutter_ad_plugin/ad/analytics/ad_event.dart';
-import 'package:flutter_ad_plugin/ad/analytics/ad_event_reporter.dart';
+final ads = FlutterAdPlugin.getNativeAds(
+  const PlacementType('play_middle'),
+  count: 2,
+  eventName: 'play_middle',
+);
 
+if (ads.length >= 2) {
+  DualNativeAdView(ads: ads, height: 560);
+}
+```
+
+当前 AdMob 原生广告使用 `NativeTemplateStyle`，默认不要求宿主注册自定义 `NativeAdFactory`。如果宿主要自定义原生 UI，则仍需要在 Android / iOS 宿主工程注册自己的 factory。
+
+<a id="architecture"></a>
+## 整体架构
+
+本包按 Dart / Flutter 的轻量组织方式设计：少量公开入口，内部用小对象和函数组合完成广告编排。不要把它理解成一套业务广告系统；它只负责把宿主给出的配置、广告 SDK 和埋点回调串起来。
+
+```mermaid
+flowchart TD
+  App["Host App"] --> Facade["FlutterAdPlugin"]
+  Facade --> Engine["AdEngine"]
+  Engine --> Repo["AdConfigRepository"]
+  Engine --> Reporter["AdEventReporter"]
+  Engine --> Guard["AdDisplayGuard"]
+  Repo --> Parser["AdConfigParser(JSON)"]
+  Engine --> Registry["AdAdapterRegistry"]
+  Registry --> AdmobOpen["AdmobOpenAdapter"]
+  Registry --> AdmobInt["AdmobInterstitialAdapter"]
+  Registry --> AdmobRew["AdmobRewardedAdapter"]
+  Registry --> AdmobNative["AdmobNativeAdapter"]
+```
+
+### Facade
+
+`FlutterAdPlugin` 是唯一推荐给宿主使用的入口。它只保留静态方法，把调用转发给内部 `AdEngine`，避免宿主直接依赖内部类。
+
+### Core
+
+Core 包含三类对象：
+
+- `PlacementType` / `AdType` / `AdSource`：用 String 包装，支持服务端动态新增 key。
+- `AdConfig` / `AdUnitConfig` / `PlacementPolicy`：运行时配置模型。
+- `AdConfigParser` / `AdConfigRepository`：解析 JSON 和配置来源接口。
+
+`DefaultAdConfigRepository` 只解析传入的 `localConfig` / `localConfigJson`。远端云控、Firebase Remote Config、本地缓存等都由宿主自己实现 `AdConfigRepository`。
+
+### Engine
+
+`AdEngine` 是编排层，负责：
+
+- 初始化广告 SDK 和配置。
+- 按 placement 预加载广告。
+- 管理全屏广告缓存和原生广告缓存。
+- 处理全屏展示、连续展示、公共兜底位、高价位替换。
+- 调用 `AdDisplayGuard` 做展示互斥和冷却判断。
+- 生成生命周期事件并交给 `AdEventReporter`。
+
+内部 `_AdPoolStore` 只是轻量缓存容器，不是对外服务层。
+
+### Guard
+
+`AdDisplayGuard` 只处理全屏广告展示约束：
+
+- 同一时刻只允许一个全屏广告展示。
+- 可按配置开启同广告位冷却。
+- 可按配置开启跨广告位冷却。
+
+`showSequence()` 按业务需要连续展示两个广告，不额外套用 CD 逻辑。
+
+### Platform
+
+`AdTypeAdapter` 抹平不同 SDK 的加载和展示接口。当前只注册了 AdMob：
+
+- `AdmobOpenAdapter`
+- `AdmobInterstitialAdapter`
+- `AdmobRewardedAdapter`
+- `AdmobNativeAdapter`
+
+后续接 MAX / TopOn 时，新增 adapter 并注册到 `AdAdapterRegistry` 即可。
+
+### UI
+
+`NativeAdView` 和 `DualNativeAdView` 只负责渲染已加载的原生广告对象。插件不负责业务页面布局，也不依赖宿主 UI 框架。
+
+### 代码规模
+
+核心代码集中在 `lib/`：
+
+- `lib/flutter_ad_plugin.dart`：公开 facade。
+- `lib/src/core/`：配置模型和 JSON 解析。
+- `lib/src/engine/`：广告编排和展示守卫。
+- `lib/src/platform/`：广告 SDK 适配层。
+- `lib/src/ui/`：原生广告 Widget。
+- `lib/src/utils/`：日志与埋点事件。
+
+<a id="integration"></a>
+## 接入指南
+
+### 1. 准备配置仓库
+
+本地配置可以直接使用 `DefaultAdConfigRepository`：
+
+```dart
+final repository = DefaultAdConfigRepository(localConfig: adConfigJson);
+```
+
+远端配置建议由宿主实现：
+
+```dart
+class MyConfigRepository implements AdConfigRepository {
+  MyConfigRepository(this._remoteConfigService);
+
+  final RemoteConfigService _remoteConfigService;
+  AdConfig? _cache;
+
+  @override
+  Future<AdConfig> getConfig() async {
+    final cached = _cache;
+    if (cached != null) return cached;
+
+    final json = await _remoteConfigService.getAdConfigJson();
+    return _cache = AdConfigParser().parse(json);
+  }
+}
+```
+
+插件不关心配置来自接口、Firebase Remote Config、AB 实验还是本地缓存。
+
+### 2. 准备埋点上报
+
+```dart
 class MyAdEventReporter implements AdEventReporter {
   @override
   Future<void> report(AdEvent event) async {
-    final placement = event.placementLabel ?? event.placement;
     final params = {
       'event_type': event.eventType.name,
-      'placement': placement,
+      'placement': event.placementLabel ?? event.placement.name,
       'ad_type': event.adType.name,
       'source': event.source.name,
       'ad_unit_id': event.adUnitId,
@@ -254,114 +257,165 @@ class MyAdEventReporter implements AdEventReporter {
       'error_reason': event.errorReason,
       'revenue': event.revenue,
       'currency': event.currency,
-      'ts': event.timestamp.toIso8601String(),
       'event_name': event.eventName,
+      'timestamp': event.timestamp.toIso8601String(),
     };
 
-    // TODO: 映射到你的埋点系统（Firebase / AppsFlyer / Adjust / 自研）
     // sendToAnalytics(params);
   }
 }
 ```
 
-当前会回调的核心事件类型（`AdEventType`）：
+`DefaultAdEventReporter` 是空实现，只适合 demo 或临时关闭上报。正式项目建议始终注入自己的 reporter。
 
-- `loadRequested`
-- `loadSucceeded`
-- `loadFailed`
-- `show`
-- `showSuccess`
-- `showFail`
-- `clicked`
-- `close`
-- `income`
+### 日志
 
-埋点建议：
+默认控制台只打印失败类广告生命周期事件：
 
-- 失败事件（`loadFailed/showFail`）务必上报 `error_code`、`error_reason`
-- 收益事件（`income`）来自 AdMob `onPaidEvent`，开屏、插屏、激励、原生都统一走这个回调，务必上报 `revenue`、`currency`、`ad_unit_id`
-- `revenue` 保留 AdMob 回调的 `valueMicros` 原始值；发给 Meta/Facebook `AD_IMPRESSION` 时再除以 `1000000`
-- 业务广告位建议优先使用 `placementLabel`，未传时回退 `placement`
-
-默认 `DefaultAdEventReporter` 会额外尝试通过 `facebook_sdk_init` MethodChannel 发送 Meta/Facebook 标准事件：
-
-- method: `initializeFbSDK`
-- method: `logAdImpression`
-- event: `AppEventsConstants.EVENT_NAME_AD_IMPRESSION`
-- currency param: `AppEventsConstants.EVENT_PARAM_CURRENCY`
-- 当前仓库内置 Android 示例桥接；iOS 宿主需要按同样 MethodChannel 约定接入 FBSDKCoreKit
-
-如果宿主使用自定义 `AdEventReporter`，也可以直接在 `AdEventType.income` 里自行接 Firebase / AppsFlyer / Adjust / 自研 BI / Meta App Events。
-
-### 3) 开屏/全屏广告
-
-```dart
-const openPlacement = PlacementType('open');
-final shown = await FlutterAdPlugin.show(openPlacement, eventName: 'open_cold');
+```text
+[ad][event] {"event_type":"loadFailed",...}
 ```
 
-> `show()` 会阻塞直到用户关闭广告（或展示失败）才返回。冷启动开屏应放在启动页 `initState` 中 await；如果 `open.wait_for_load_on_show=true`，无缓存时会按全局 `load_timeout` 等待加载。
+完整生命周期事件仍会传给 `AdEventReporter.report()`，包括 `loadRequested`、`loadSucceeded`、`showSuccess`、`income`、`close`。正式接入建议以 reporter 为主做归因、排查和上报，不依赖控制台完整事件流。
 
-### 4) 原生广告
+需要本地排查完整事件和展示决策时再打开详细日志：
 
 ```dart
-const homePlacement = PlacementType('home');
-await FlutterAdPlugin.loadNative(homePlacement, eventName: 'first_load');
+FlutterAdPlugin.verboseLogging = true;
+```
+
+打开后会输出完整 `[ad][event]` JSON，并额外输出 guard 拦截、无缓存、连续展示缺第二个广告、预加载耗尽或 SDK 加载失败等内部诊断。
+
+核心事件：
+
+| Event | 说明 |
+|---|---|
+| `loadRequested` | 开始请求某个广告单元 |
+| `loadSucceeded` | 广告加载成功 |
+| `loadFailed` | 广告加载失败 |
+| `showSuccess` | 全屏广告展示成功 |
+| `showFail` | 全屏广告展示失败 |
+| `clicked` | 广告点击 |
+| `close` | 全屏广告关闭 |
+| `income` | SDK 收益回调 |
+
+### 3. 初始化
+
+```dart
+await FlutterAdPlugin.init(
+  configRepository: MyConfigRepository(remoteConfigService),
+  eventReporter: MyAdEventReporter(),
+  onAdNotReady: (event) {
+    // 可选：根据 event.message 弹 toast/snackbar/dialog。
+  },
+);
+```
+
+`onAdNotReady` 只在 `placement_policy.show_not_ready_toast=true` 且无广告可展示时触发。插件不会自己弹 UI。
+
+### 4. 冷启动预加载和开屏
+
+```dart
+FlutterAdPlugin.preloadPlacements(
+  const [
+    PlacementType('open'),
+    PlacementType('home'),
+    PlacementType('message'),
+  ],
+  eventName: 'open_cold',
+);
+
+await FlutterAdPlugin.show(
+  const PlacementType('open'),
+  eventName: 'open_cold',
+);
+```
+
+`preloadPlacements()` 是 fire-and-forget。它返回时只代表预加载任务已发起，不代表广告已经加载完成。
+
+`show()` 会等待广告关闭或展示失败后返回，适合冷启动开屏、激励广告、需要串行控制的业务流程。
+
+### 5. 热启动开屏
+
+插件不监听生命周期。宿主可用 AdMob 的 `AppStateEventNotifier`：
+
+```dart
+AppStateEventNotifier.startListening();
+_sub = AppStateEventNotifier.appStateStream.listen((state) {
+  if (state == AppState.foreground) {
+    FlutterAdPlugin.show(
+      const PlacementType('open'),
+      eventName: 'open_hot',
+    );
+  }
+});
+```
+
+### 6. 连续展示
+
+```dart
+final shown = await FlutterAdPlugin.showSequence(
+  const PlacementType('play_middle'),
+  eventName: 'play_middle',
+);
+```
+
+`showSequence()` 会尽量展示两个全屏缓存。它用于需要连续广告的业务场景，不额外套用 CD 逻辑。
+
+### 7. 原生广告
+
+```dart
+await FlutterAdPlugin.loadNative(
+  const PlacementType('home'),
+  eventName: 'first_load',
+);
+
 final ad = FlutterAdPlugin.getNativeAd(
-  homePlacement,
+  const PlacementType('home'),
   eventName: 'home_show',
 );
-if (ad != null) {
-  NativeAdView(ad: ad, height: 280);
-}
 ```
 
-原生广告的加载事件使用 `loadNative()` 的 `eventName`。收益事件来自 SDK 的 `onPaidEvent`，插件会在 `getNativeAd()` / `getNativeAds()` 时更新展示归因，所以冷启动预加载、播放中展示这种场景可以这样区分：加载上报 `open_cold`，收益上报 `play_middle`。
+`getNativeAd()` / `getNativeAds()` 会更新原生广告展示归因，用于后续 `income` 回调带出正确 `eventName`。
 
-如果一个广告位配置了多个原生广告 ID，可以取多个缓存结果做组合展示：
+双原生：
 
 ```dart
-const homePlacement = PlacementType('home');
-await FlutterAdPlugin.loadNative(homePlacement, eventName: 'first_load');
 final ads = FlutterAdPlugin.getNativeAds(
-  homePlacement,
+  const PlacementType('play_middle'),
   count: 2,
   eventName: 'play_middle',
 );
-if (ads.length >= 2) {
-  DualNativeAdView(ads: ads, height: 560);
-}
 ```
 
-### 5) 只传 JSON 的实现方式
+### 8. 原生广告 UI
 
-`MyConfigRepository` 内部直接解析 JSON：
+当前 AdMob 原生广告默认使用 `NativeTemplateStyle`，宿主不必注册自定义 factory。
 
-```dart
-class MyConfigRepository implements AdConfigRepository {
-  @override
-  Future<AdConfig> getConfig() async {
-    final json = ...; // remote/local json map
-    return AdConfigParser().parse(json);
-  }
-}
-```
+如果宿主要自定义原生 UI，则需要在宿主 Android / iOS 工程注册对应 `NativeAdFactory`，并在适配器中使用匹配的 factoryId。
 
-你只需要维护 JSON 即可决定：
+### 9. 常见问题
 
-- 广告位（placement key）
-- 候选广告类型与权重
-- 通用广告位、高价广告位、冷却策略、提示策略、无缓存时是否等待加载（`placement_policy`）
+#### 为什么新增广告位不用改 Dart 代码？
 
-### 6) 新增广告位
+`PlacementType` 是 String 包装，不是 enum。只要 JSON 有对应 placement key，插件就能解析。
 
-当前版本已支持纯字符串广告位：新增 placement key 只需要在 JSON 中新增对应节点，不需要再改插件源码映射表。
+#### 为什么插件不内置 Firebase Remote Config？
 
----
+云控属于宿主业务基础设施。插件只需要 `AdConfigRepository`，这样不会强迫所有接入方引入 Firebase。
 
-## 广告配置（JSON 驱动）
+#### 为什么插件不自己弹 toast？
 
-插件通过 JSON 决定广告位、广告类型候选、权重、加载超时、频控与展示策略。默认实现与 example 使用同一份结构。
+弹窗样式、路由上下文和 UI 库都属于宿主。插件只通过 `onAdNotReady` 返回上下文和文案。
+
+#### `eventName` 和 `placement` 有什么区别？
+
+`placement` 是广告位 key，比如 `open`、`home`、`play_middle`。`eventName` 是触发场景，比如 `open_cold`、`open_hot`、`first_load`、`home_show`。
+
+<a id="ad-config"></a>
+## 广告配置 JSON
+
+广告配置由 `AdConfigParser` 解析。除保留字段外，顶层每个 List 节点都会被尝试识别为广告位配置。
 
 ### 完整示例
 
@@ -378,187 +432,313 @@ class MyConfigRepository implements AdConfigRepository {
       "apply_same_placement_cd": true,
       "apply_different_placement_cd": true,
       "contributes_to_global_cooldown": true,
-      "show_not_ready_toast": false,
-      "wait_for_load_on_show": false
+      "wait_for_load_on_show": false,
+      "prefer_high_value_on_show": false
     },
     "home": {
-      "is_fullscreen": false,
-      "apply_same_placement_cd": false,
-      "apply_different_placement_cd": false,
-      "contributes_to_global_cooldown": false,
-      "show_not_ready_toast": false
+      "is_fullscreen": false
     },
     "message": {
       "wait_for_load_on_show": true,
-      "show_not_ready_toast": true
+      "show_not_ready_toast": true,
+      "not_ready_msg": "Ad is still loading, please wait a moment."
     }
   },
   "open": [
-    { "source": "admob", "weight": 3, "type": "open", "id": "ca-app-pub-3940256099942544/5575463023", "id2": "ca-app-pub-3940256099942544/5575463023" },
-    { "source": "admob", "weight": 2, "type": "interstitial", "id": "ca-app-pub-3940256099942544/4411468910" },
-    { "source": "admob", "weight": 1, "type": "rewarded", "id": "ca-app-pub-3940256099942544/1712485313" }
+    {
+      "source": "admob",
+      "weight": 3,
+      "type": "open",
+      "id": "ca-app-pub-3940256099942544/5575463023"
+    },
+    {
+      "source": "admob",
+      "weight": 2,
+      "type": "interstitial",
+      "id": "ca-app-pub-3940256099942544/4411468910"
+    }
   ],
   "home": [
-    { "source": "admob", "weight": 1, "type": "native", "ids": ["ca-app-pub-3940256099942544/1044960115", "ca-app-pub-3940256099942544/1044960115"] }
-  ],
-  "message": [
-    { "source": "admob", "weight": 2, "type": "interstitial", "id": "ca-app-pub-3940256099942544/4411468910", "load_timeout": 15 }
-  ],
-  "behavior": [
-    { "ad_source": "admob", "ad_weight": 1, "ad_type": "interstitial", "ad_id": "ca-app-pub-3940256099942544/1033173712" }
-  ],
-  "behavior2": [
-    { "ad_source": "admob", "ad_weight": 2, "ad_type": "native", "ad_id": "ca-app-pub-3940256099942544/2247696110" },
-    { "ad_source": "admob", "ad_weight": 1, "ad_type": "rewarded", "ad_id": "ca-app-pub-3940256099942544/5224354917" }
-  ],
-  "level_h": [
-    { "ad_source": "admob", "ad_weight": 1, "ad_type": "interstitial", "ad_id": "ca-app-pub-3940256099942544/1033173712" }
+    {
+      "source": "admob",
+      "weight": 1,
+      "type": "native",
+      "id": "ca-app-pub-3940256099942544/3986624511",
+      "id2": "ca-app-pub-3940256099942544/2521693316",
+      "template_type": "medium",
+      "refresh_minutes": 20
+    }
   ],
   "play_middle": [
-    { "ad_source": "admob", "ad_weight": 2, "ad_type": "interstitial", "ad_id": "ca-app-pub-3940256099942544/1033173712" },
-    { "ad_source": "admob", "ad_weight": 1, "ad_type": "double_native", "ad_id": "ca-app-pub-3940256099942544/1044960115", "ad_id2": "ca-app-pub-3940256099942544/1044960115" }
+    {
+      "ad_source": "admob",
+      "ad_weight": 2,
+      "ad_type": "interstitial",
+      "ad_id": "ca-app-pub-3940256099942544/1033173712"
+    },
+    {
+      "ad_source": "admob",
+      "ad_weight": 1,
+      "ad_type": "double_native",
+      "ad_id": "ca-app-pub-3940256099942544/1044960115",
+      "ad_id2": "ca-app-pub-3940256099942544/1044960115"
+    }
   ]
 }
 ```
 
-### 字段说明
+### 顶层字段
 
-- 顶层 `load_timeout`：全局单次加载超时（秒）。
-- `same_placement_cd`：同广告位冷却（秒）。
-- `different_placement_cd`：跨广告位冷却（秒）。
-- `common_placements`：没有配置固定广告位时使用的公共广告位列表；不配置时默认 `behavior`、`behavior2`。
-- `high_value_placement`：高价值全屏广告位；不配置但存在 `level_h` 时默认使用 `level_h`。
-- `<placement_key>`：广告位键（如 `open`、`home`、`message`）。
-- `source`：广告源（当前实现 `admob`）。
-- `type`：广告类型（`open/interstitial/rewarded/native`）。
-- `weight`：候选权重，越大越优先。
-- `id`：广告单元 ID。
-- 也支持服务端字段别名：`ad_source`、`ad_type`、`ad_weight`、`ad_id`、`ad_id2`。
-- `id2/id3...`：同一个配置项下的额外广告单元 ID，插件会展开为多个可缓存广告。
-- `ids`：数组形式的额外广告单元 ID，适合配置多个 ID；可与 `id` 混用。
-- 单条 `load_timeout`：覆盖当前广告配置项的加载超时；未配置时回退顶层 `load_timeout`。
+| 字段 | 类型 | 默认值 | 说明 |
+|---|---|---|---|
+| `load_timeout` | number | `7` | 单个广告单元加载超时，单位秒 |
+| `same_placement_cd` | number | `30` | 同广告位展示冷却，单位秒 |
+| `different_placement_cd` | number | `30` | 跨广告位展示冷却，单位秒 |
+| `common_placements` | string[] | `["behavior", "behavior2"]` | 请求未配置广告位时的兜底广告位列表 |
+| `high_value_placement` | string | `level_h` 如果存在 | 高价值全屏广告位 |
+| `placement_policy` | object | 自动推导 | 展示策略 |
 
-同一个广告位如果配置了多个 ID，插件会尽量缓存多个广告对象。`getNativeAd(...)` 仍返回第一个广告；需要双原生广告时使用 `getNativeAds(..., count: 2)`。
+### 广告单元字段
 
-### `placement_policy`（可选）
+| 字段 | 别名 | 说明 |
+|---|---|---|
+| `source` | `ad_source` | 广告源，当前实现 `admob` |
+| `type` | `ad_type` | 广告类型：`open` / `interstitial` / `rewarded` / `native` / `double_native` |
+| `weight` | `ad_weight` | 权重，数值越大越优先尝试 |
+| `id` | `ad_id` | 广告单元 ID |
+| `id2` | `ad_id2` | 第二个广告单元 ID |
+| `id3...` | - | 更多编号 ID，按数字顺序解析 |
+| `ids` | - | 数组形式的多个广告单元 ID |
+| `load_timeout` | - | 覆盖当前广告单元加载超时 |
+| `template_type` | - | AdMob native template 类型：`small` / `medium` |
+| `refresh_minutes` | - | 原生广告缓存自动刷新间隔 |
 
-按广告位键覆盖策略：
+`id`、`id2`、`id3...`、`ids` 会展开成多个 `AdUnitConfig`。同一个 placement 因此可以缓存多个广告对象，`getNativeAds(..., count: 2)` 会从缓存里取多个原生广告。
 
-| 字段 | 说明 |
-|---|---|
-| `is_fullscreen` | `true` 时进入全屏展示互斥与冷却链路；`false` 时按非全屏位处理（常见于 `native`） |
-| `apply_same_placement_cd` | `true` 时，同一个 placement 在冷却窗口内重复触发会被拦截 |
-| `apply_different_placement_cd` | `true` 时，如果刚展示过其他 placement 的全屏广告，在跨位冷却窗口内会被拦截 |
-| `contributes_to_global_cooldown` | `true` 时，该 placement 成功展示后会影响其他开启跨位冷却的 placement |
-| `show_not_ready_toast` | `true` 时，未命中缓存/加载失败场景可弹提示；`false` 时静默失败 |
-| `wait_for_load_on_show` | `true` 时 `show()` 无缓存会等待加载；`false` 时直接返回 no_cache。开屏一般为 `false`，激励/消息奖励类广告一般为 `true` |
+### placement_policy
 
-### 通用位与高价位规则
+| 字段 | 默认值 | 说明 |
+|---|---|---|
+| `is_fullscreen` | 根据候选类型推导 | 是否进入全屏展示链路 |
+| `apply_same_placement_cd` | `false` | 是否启用同广告位冷却 |
+| `apply_different_placement_cd` | `false` | 是否启用跨广告位冷却 |
+| `contributes_to_global_cooldown` | `false` | 成功展示后是否写入全局冷却时间 |
+| `show_not_ready_toast` | `false` | 无广告可展示时是否触发 `onAdNotReady` |
+| `not_ready_msg` | 默认英文文案 | 传给 `onAdNotReady` 的建议文案 |
+| `wait_for_load_on_show` | 非 open 默认为 `true` | `show()` 无缓存时是否等待加载 |
+| `prefer_high_value_on_show` | 非 open 默认为 `true` | 展示固定广告位时是否优先尝试高价位缓存 |
+| `allowed_types` | 空 | 限定当前 placement 允许的广告类型 |
 
-- 未配置固定广告位时，`show(search)` / `preload(search)` 会从 `common_placements` 中选择公共广告位。
-- 固定广告位有全屏缓存时，`show(play_middle)` 会先检查 `high_value_placement` 是否有可用高价全屏缓存；命中时展示高价缓存，但埋点 placement 仍上报调用方传入的场景。
-- `double_native` 表示双原生组合，不参与高价位替换。
-- `double_native` 只是某个广告位里的双原生候选类型，不代表必须有独立的 `double_ad` placement。
+### 默认推导规则
 
-推荐实践：
+- placement 中只要包含全屏类型，默认 `is_fullscreen=true`。
+- `open` 默认 `wait_for_load_on_show=false`、`prefer_high_value_on_show=false`。
+- 其他 placement 默认 `wait_for_load_on_show=true`、`prefer_high_value_on_show=true`。
+- `allowed_types` 不配置时，全屏 placement 支持全屏和原生候选，非全屏 placement 只支持原生候选。
 
-- `open/chatBack/chatSession` 这类入口拦截位，通常配置为：`is_fullscreen=true`、`apply_same_placement_cd=true`、`apply_different_placement_cd=true`、`contributes_to_global_cooldown=true`。
-- `message/liveVideo` 这类高频触发位，通常按业务体验降低限制：可关闭同位/跨位冷却，按需开启 `show_not_ready_toast`。
-- `home` 原生位通常配置为：`is_fullscreen=false`，并关闭冷却相关字段。
+### 公共兜底位
 
-未配置时，插件按候选广告类型自动推导默认策略：
+当调用 `show(search)` 或 `preload(search)`，但 JSON 没有配置 `search` 时，插件会按 `common_placements` 顺序查找第一个已配置的公共广告位。
 
-- 含 `native` 的 placement 默认视为非全屏
-- 纯全屏类型 placement 默认启用全屏相关策略
+### 高价位替换
 
-### 配置入口
+当固定 placement 可展示时，如果 `prefer_high_value_on_show=true` 且 `high_value_placement` 有可用全屏缓存，插件会优先展示高价位缓存。
 
-- 默认仓库：`DefaultAdConfigRepository`
-- 自定义实现：实现 `AdConfigRepository`
-- 默认仓库支持传入 `localConfig` / `localConfigJson` 作为本地兜底配置
-- Firebase Remote Config 的 `ad_config_json` 有有效内容时会覆盖本地配置并更新 `_cached`
-- 默认仓库会监听实时云控更新；如果更新包含 `ad_config_json`，`activate()` 后重新解析并替换缓存配置
-- 插件不内置任何广告位；本地兜底和云控 JSON 都由宿主提供
+埋点仍以上层调用传入的 placement / eventName 为准，方便业务侧按触发场景统计。
 
----
+### double_native
 
-## 时序图
+`double_native` 表示双原生候选类型，用于配置两个原生广告 ID。它不是一个必须固定存在的 placement 名。
 
-### 初始化与配置解析
+使用方式：
+
+```dart
+final ads = FlutterAdPlugin.getNativeAds(
+  const PlacementType('play_middle'),
+  count: 2,
+  eventName: 'play_middle',
+);
+```
+
+### 推荐配置
+
+`placement_policy` 中的开屏策略：
+
+```json
+{
+  "open": {
+    "is_fullscreen": true,
+    "apply_same_placement_cd": true,
+    "apply_different_placement_cd": true,
+    "contributes_to_global_cooldown": true,
+    "wait_for_load_on_show": false,
+    "prefer_high_value_on_show": false
+  }
+}
+```
+
+`placement_policy` 中的激励 / 消息奖励策略：
+
+```json
+{
+  "message": {
+    "is_fullscreen": true,
+    "wait_for_load_on_show": true,
+    "show_not_ready_toast": true,
+    "not_ready_msg": "Ad is still loading, please wait a moment."
+  }
+}
+```
+
+`placement_policy` 中的原生策略：
+
+```json
+{
+  "home": {
+    "is_fullscreen": false
+  }
+}
+```
+
+<a id="sequence"></a>
+## 展示时序
+
+### 初始化
 
 ```mermaid
 sequenceDiagram
   participant App
   participant Plugin as FlutterAdPlugin
-  participant Service as AdService
+  participant Engine as AdEngine
   participant Repo as AdConfigRepository
   participant Parser as AdConfigParser
+  participant SDK as AdMob SDK
 
   App->>Plugin: init(configRepository, eventReporter)
-  Plugin->>Service: initWith(...)
-  Service->>Repo: getConfig()
+  Plugin->>Engine: initWith(...)
+  Engine->>SDK: initialize()
+  Engine->>Repo: getConfig()
   Repo->>Parser: parse(json)
   Parser-->>Repo: AdConfig
-  Repo-->>Service: AdConfig
+  Repo-->>Engine: AdConfig
+  Engine-->>Plugin: ready
+  Plugin-->>App: Future complete
 ```
 
-### 全屏广告展示
+### 批量预加载
 
 ```mermaid
 sequenceDiagram
   participant App
-  participant Service as AdService
+  participant Plugin as FlutterAdPlugin
+  participant Engine as AdEngine
+  participant Adapter as AdMob Adapter
+
+  App->>Plugin: preloadPlacements(placements)
+  Plugin->>Engine: preloadPlacements(placements)
+  Engine-->>Plugin: tasks started
+  Plugin-->>App: Future complete
+  Engine->>Adapter: preload placement A
+  Engine->>Adapter: preload placement B
+  Adapter-->>Engine: cache ad / fail
+```
+
+`preloadPlacements()` 不等待所有 adapter 加载完成。需要等待明确结果时，用 `preload()` 或 `loadNative()`。
+
+### 单个全屏广告展示
+
+```mermaid
+sequenceDiagram
+  participant App
+  participant Engine as AdEngine
   participant Guard as AdDisplayGuard
-  participant Full as FullscreenAdController
   participant Adapter as AdMob Adapter
   participant Reporter as AdEventReporter
 
-  App->>Service: show(placement)
-  Service->>Guard: canShow(placement, config)
-  Guard-->>Service: allowed/blocked
-  Service->>Full: show(placement)
-  Full->>Reporter: ad_show
-  Full->>Adapter: show(ad)
-  Adapter-->>Reporter: ad_show_succ/ad_show_fail
+  App->>Engine: show(placement, eventName)
+  Engine->>Engine: resolve common/high-value placement
+  Engine->>Guard: canShow(...)
+  Guard-->>Engine: allowed / blocked
+  alt no cache and wait_for_load_on_show
+    Engine->>Adapter: load(unit)
+    Adapter-->>Engine: AdLoadResult
+  end
+  Engine->>Adapter: show(ad)
+  Adapter-->>Reporter: showSuccess / showFail
   Adapter-->>Reporter: income(onPaidEvent)
-  Full-->>Service: AdShowResult
-  Service-->>App: bool
+  Adapter-->>Reporter: close
+  Adapter-->>Engine: AdShowResult
+  Engine-->>App: bool
 ```
+
+`show()` 会阻塞到广告关闭或展示失败。
+
+### 连续展示
+
+```mermaid
+sequenceDiagram
+  participant App
+  participant Engine as AdEngine
+  participant Adapter as AdMob Adapter
+
+  App->>Engine: showSequence(placement)
+  Engine->>Engine: select first cached slot
+  Engine->>Engine: select second cached slot
+  Engine->>Adapter: show(first)
+  Adapter-->>Engine: closed / failed
+  alt first shown and second available
+    Engine->>Adapter: show(second)
+    Adapter-->>Engine: closed / failed
+  else second missing
+    Engine->>Engine: try refill
+  end
+  Engine-->>App: bool
+```
+
+`showSequence()` 用于明确需要连续广告的业务场景，不额外套用 CD 逻辑。
 
 ### 原生广告
 
 ```mermaid
 sequenceDiagram
   participant App
-  participant Service as AdService
-  participant Native as NativeAdController
+  participant Engine as AdEngine
   participant Adapter as AdmobNativeAdapter
-  participant Factory as NativeAdFactory(iOS/Android)
+  participant Reporter as AdEventReporter
 
-  App->>Service: loadNative(placement)
-  Service->>Native: preload(placement)
-  Native->>Adapter: load(unit)
-  Adapter->>Factory: factoryId=homeListTile
-  Factory-->>Adapter: NativeAdView
-  Adapter-->>Native: NativeAd
-  App->>Service: getNativeAd/getNativeAds(placement)
-  Service-->>App: NativeAd? / List<NativeAd>
+  App->>Engine: loadNative(placement, eventName)
+  Engine->>Adapter: load(native unit)
+  Adapter-->>Engine: NativeAd
+  Engine->>Engine: cache native ad
+  App->>Engine: getNativeAd/getNativeAds(show eventName)
+  Engine->>Adapter: update attribution
+  Engine-->>App: NativeAd / List
+  Adapter-->>Reporter: clicked / income
 ```
 
----
+原生广告收入回调可能晚于 `loadNative()`。因此插件在 `getNativeAd()` / `getNativeAds()` 时更新归因，让后续 `income` 带出展示场景的 `eventName`。
 
-## Integration Points
+### 未准备提示
 
-- `AdConfigRepository`: implement your own remote config source.
-- `AdEventReporter`: implement your own analytics reporting (Firebase, Facebook, AppsFlyer, etc.).
-- `AdEventType.income`: emitted from AdMob `onPaidEvent` for all ad types.
-- `AdEvent.eventName`: required caller-defined event name, passed through from `show()`/`preload()`/`loadNative()`/`getNativeAd()`.
+```mermaid
+sequenceDiagram
+  participant App
+  participant Engine as AdEngine
 
----
+  App->>Engine: show(placement)
+  Engine->>Engine: no cache / load failed
+  alt show_not_ready_toast and onAdNotReady != null
+    Engine-->>App: onAdNotReady(event)
+  end
+  Engine-->>App: false
+```
 
-## Example App
+插件只回调 `onAdNotReady`，不直接弹 toast。
 
-Run the example:
+<a id="example"></a>
+## Example 与验证
+
+### Example
 
 ```bash
 cd example
@@ -566,7 +746,11 @@ flutter pub get
 flutter run
 ```
 
-Reference templates:
+示例配置和 reporter 模板见 `example/lib/integration_templates.dart`。
 
-- `example/lib/integration_templates.dart`
-- `CHANGELOG.md` (`v0.1.0`)
+### 验证
+
+```bash
+flutter analyze
+flutter test
+```
