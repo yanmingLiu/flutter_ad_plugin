@@ -144,7 +144,7 @@ class MyAdEventReporter implements AdEventReporter {
     // debugPrint('🚀 [实现方] ${jsonEncode(event.toJson())}');
 
     debugPrint(
-      '🚀 [实现方]: placement: ${event.placement} eventName: ${event.eventName}...',
+      '🚀 [实现方]: placement: ${event.placement} eventName: ${event.eventName}...\n',
     );
 
     // 示例：将广告收入上报至 Facebook

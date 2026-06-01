@@ -21,6 +21,7 @@ void _reportPaidEvent({
   required String adUnitId,
   required double valueMicros,
   required String currencyCode,
+  String? network,
 }) {
   _reportLifecycleEvent(
     reporter,
@@ -35,6 +36,7 @@ void _reportPaidEvent({
       currency: currencyCode,
       timestamp: DateTime.now(),
       eventName: eventName,
+      network: network,
     ),
   );
 }
@@ -175,6 +177,7 @@ abstract class _AdmobFullscreenAdapter<TAd extends AdWithoutView>
         adUnitId: ad.adUnitId,
         valueMicros: valueMicros,
         currencyCode: currencyCode,
+        network: ad.responseInfo?.loadedAdapterResponseInfo?.adSourceName,
       );
     };
 
@@ -194,6 +197,7 @@ abstract class _AdmobFullscreenAdapter<TAd extends AdWithoutView>
               adUnitId: ad.adUnitId,
               timestamp: DateTime.now(),
               eventName: eventName,
+              network: ad.responseInfo?.loadedAdapterResponseInfo?.adSourceName,
             ),
           );
         },
@@ -215,6 +219,7 @@ abstract class _AdmobFullscreenAdapter<TAd extends AdWithoutView>
               errorReason: error.message,
               timestamp: DateTime.now(),
               eventName: eventName,
+              network: ad.responseInfo?.loadedAdapterResponseInfo?.adSourceName,
             ),
           );
         },
@@ -235,6 +240,7 @@ abstract class _AdmobFullscreenAdapter<TAd extends AdWithoutView>
               adUnitId: ad.adUnitId,
               timestamp: DateTime.now(),
               eventName: eventName,
+              network: ad.responseInfo?.loadedAdapterResponseInfo?.adSourceName,
             ),
           );
         },
@@ -250,6 +256,7 @@ abstract class _AdmobFullscreenAdapter<TAd extends AdWithoutView>
               adUnitId: ad.adUnitId,
               timestamp: DateTime.now(),
               eventName: eventName,
+              network: ad.responseInfo?.loadedAdapterResponseInfo?.adSourceName,
             ),
           );
         },
@@ -493,6 +500,7 @@ class AdmobNativeAdapter implements AdTypeAdapter {
               adUnitId: unit.id,
               timestamp: DateTime.now(),
               eventName: eventName,
+              network: ad.responseInfo?.loadedAdapterResponseInfo?.adSourceName,
             ),
           );
         },
@@ -509,6 +517,7 @@ class AdmobNativeAdapter implements AdTypeAdapter {
             adUnitId: unit.id,
             valueMicros: valueMicros,
             currencyCode: currencyCode,
+            network: ad.responseInfo?.loadedAdapterResponseInfo?.adSourceName,
           );
         },
       ),

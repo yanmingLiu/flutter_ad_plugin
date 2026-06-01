@@ -36,6 +36,8 @@ class AdEvent {
   /// 宿主传入的广告场景，插件原样透传。
   final String eventName;
 
+  final String? network;
+
   AdEvent({
     required this.eventType,
     required this.placement,
@@ -49,6 +51,7 @@ class AdEvent {
     this.errorReason,
     required this.timestamp,
     required this.eventName,
+    this.network,
   });
 
   Map<String, Object?> toJson() {
@@ -65,6 +68,7 @@ class AdEvent {
       'error_reason': errorReason,
       'timestamp': timestamp.toIso8601String(),
       'event_name': eventName,
+      'network': network,
     };
   }
 }
