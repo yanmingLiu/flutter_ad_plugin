@@ -270,6 +270,20 @@ abstract class _AdmobFullscreenAdapter<TAd extends AdWithoutView>
       if (!completer.isCompleted) {
         completer.complete(AdShowResult.failure(e));
       }
+      _reportLifecycleEvent(
+        reporter,
+        AdEvent(
+          eventType: AdEventType.showFail,
+          placement: placement,
+          placementLabel: placementLabel,
+          adType: type,
+          source: source,
+          adUnitId: fullscreenAd.adUnitId,
+          errorReason: e.toString(),
+          timestamp: DateTime.now(),
+          eventName: eventName,
+        ),
+      );
     }
 
     return completer.future;

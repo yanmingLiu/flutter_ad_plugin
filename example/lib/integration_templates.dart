@@ -1,6 +1,5 @@
 import 'dart:io';
 
-import 'package:flutter/widgets.dart';
 import 'package:flutter_ad_plugin/flutter_ad_plugin.dart';
 
 class MyConfigRepository extends DefaultAdConfigRepository {
@@ -141,12 +140,6 @@ class _AdMobTestIds {
 class MyAdEventReporter implements AdEventReporter {
   @override
   Future<void> report(AdEvent event) async {
-    // debugPrint('🚀 [实现方] ${jsonEncode(event.toJson())}');
-
-    debugPrint(
-      '🚀 [实现方]: placement: ${event.placement} eventName: ${event.eventName}...\n',
-    );
-
     // 示例：将广告收入上报至 Facebook
     // if (event.eventType == AdEventType.income && event.revenue != null) {
     //   FacebookSDKUtil.logAdImpression(
@@ -158,5 +151,18 @@ class MyAdEventReporter implements AdEventReporter {
     //     adUnitId: event.adUnitId,
     //   );
     // }
+
+    // 示例：将广告事件上报至 Firebase Analytics
+    // FirebaseAnalytics.instance.logEvent(
+    //   name: 'ad_${event.eventName}',
+    //   parameters: {
+    //     'ad_source': event.source.name,
+    //     'ad_type': event.adType.name,
+    //     'ad_unit_id': event.adUnitId,
+    //     'event_type': event.eventType.name,
+    //     if (event.revenue != null) 'revenue': event.revenue,
+    //     if (event.currency != null) 'currency': event.currency,
+    //   },
+    // );
   }
 }

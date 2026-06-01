@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import '../core/ad_config.dart';
 import '../core/ad_enums.dart';
 import '../core/ad_models.dart';
+import '../platform/ad_adapter.dart';
 import '../platform/ad_registry.dart';
 import '../platform/admob/admob_platform.dart';
 import '../utils/ad_logger.dart';
@@ -35,15 +36,15 @@ class AdEngine {
   AdConfigRepository _configRepository = DefaultAdConfigRepository();
   AdEventReporter _reporter = DefaultAdEventReporter();
   AdNotReadyCallback? _onAdNotReady;
-  late final AdSdkInitializer _sdkInitializer;
-  late final AdAdapterRegistry _adapterRegistry;
+  AdSdkInitializer? _sdkInitializer;
+  AdAdapterRegistry? _adapterRegistry;
   final AdDisplayGuard _guard = AdDisplayGuard();
 
-  final _AdPoolStore _fullscreenPool = _AdPoolStore();
+  _AdPoolStore _fullscreenPool = _AdPoolStore();
   final Map<PlacementType, Future<bool>> _fullscreenLoadingFutures = {};
   final Map<PlacementType, Future<bool>> _nativeLoadingFutures = {};
 
-  final _AdPoolStore _nativePool = _AdPoolStore();
+  _AdPoolStore _nativePool = _AdPoolStore();
   final Map<PlacementType, Timer> _nativeRefreshTimers = {};
 
   AdConfigRepository get configRepository => _configRepository;
@@ -55,6 +56,8 @@ class AdEngine {
     required AdConfigRepository configRepository,
     required AdEventReporter eventReporter,
     AdNotReadyCallback? onAdNotReady,
+    List<AdTypeAdapter>? adapters,
+    List<AdSourceSdkInitializer>? sdkInitializers,
   }) async {
     if (_initialized) {
       return;
@@ -62,25 +65,47 @@ class AdEngine {
     _configRepository = configRepository;
     _reporter = eventReporter;
     _onAdNotReady = onAdNotReady;
-    await init();
+    await init(adapters: adapters, sdkInitializers: sdkInitializers);
   }
 
-  Future<void> init() async {
+  Future<void> init({
+    List<AdTypeAdapter>? adapters,
+    List<AdSourceSdkInitializer>? sdkInitializers,
+  }) async {
     if (_initialized) {
       return;
     }
 
-    _sdkInitializer = AdSdkInitializer([AdmobSdkInitializer()]);
-    _adapterRegistry = AdAdapterRegistry([
-      AdmobOpenAdapter(),
-      AdmobInterstitialAdapter(),
-      AdmobRewardedAdapter(),
-      AdmobNativeAdapter(),
-    ]);
+    _sdkInitializer = AdSdkInitializer(
+      sdkInitializers ?? [AdmobSdkInitializer()],
+    );
+    _adapterRegistry = AdAdapterRegistry(
+      adapters ??
+          [
+            AdmobOpenAdapter(),
+            AdmobInterstitialAdapter(),
+            AdmobRewardedAdapter(),
+            AdmobNativeAdapter(),
+          ],
+    );
 
-    await _sdkInitializer.initAll();
+    await _sdkInitializer!.initAll();
     await _configRepository.getConfig();
     _initialized = true;
+  }
+
+  @visibleForTesting
+  static void resetForTesting() {
+    instance._initialized = false;
+    instance._sdkInitializer = null;
+    instance._adapterRegistry = null;
+    instance._fullscreenPool = _AdPoolStore();
+    instance._fullscreenLoadingFutures.clear();
+    instance._nativeLoadingFutures.clear();
+    instance._nativePool = _AdPoolStore();
+    instance._nativeRefreshTimers.forEach((_, timer) => timer.cancel());
+    instance._nativeRefreshTimers.clear();
+    instance._guard.resetForTesting();
   }
 
   // --- Fullscreen Logic ---
@@ -160,7 +185,7 @@ class AdEngine {
     final current = pool[placement];
     final hasSameAd = pool.hasCacheKey(placement, cacheKey);
     if (hasSameAd || (current?.count ?? 0) >= targetCount) {
-      _adapterRegistry.get(source, type).dispose(ad);
+      _adapterRegistry!.get(source, type).dispose(ad);
       return;
     }
 
@@ -207,6 +232,12 @@ class AdEngine {
       log.v(
         '🚫 [show] blocked: $placementValue reason=${guardResult.reason?.name}',
       );
+      _reportShowFail(
+        adConfig: adConfig,
+        placement: showPlacement,
+        eventName: eventName,
+        errorReason: 'guard_blocked: ${guardResult.reason?.name ?? "unknown"}',
+      );
       return false;
     }
 
@@ -236,6 +267,12 @@ class AdEngine {
       log.v(
         '❌ [show] failed: reason=no_cache request=${requestPlacement.name} '
         'show=${showPlacement.name}',
+      );
+      _reportShowFail(
+        adConfig: adConfig,
+        placement: showPlacement,
+        eventName: eventName,
+        errorReason: 'no_cache',
       );
       if (policy.showNotReadyToast && _onAdNotReady != null) {
         _onAdNotReady!(
@@ -429,6 +466,8 @@ class AdEngine {
   }) async {
     final currentSlots = pool.beginLoading(placement);
 
+    AdUnitConfig? currentUnit;
+
     try {
       final config = await _configRepository.getConfig();
       final targetCount = targetCountFor(config);
@@ -446,6 +485,7 @@ class AdEngine {
 
       Object? lastError;
       for (final unit in units) {
+        currentUnit = unit;
         _reportEvent(
           AdEventType.loadRequested,
           placement,
@@ -456,7 +496,7 @@ class AdEngine {
         );
 
         final adapterType = adapterTypeFor(unit);
-        final result = await _adapterRegistry
+        final result = await _adapterRegistry!
             .get(unit.source, adapterType)
             .load(
               placement: placement,
@@ -529,6 +569,17 @@ class AdEngine {
         '❌ [preload] fatal: placement=${placement.name} '
         'kind=${kind.name} error=$e',
       );
+      if (currentUnit != null) {
+        _reportEvent(
+          AdEventType.loadFailed,
+          placement,
+          currentUnit.type,
+          currentUnit.source,
+          currentUnit.id,
+          errorReason: e.toString(),
+          eventName: eventName,
+        );
+      }
       pool.setSlots(placement, currentSlots, lastError: e);
       return currentSlots.isNotEmpty;
     }
@@ -654,9 +705,17 @@ class AdEngine {
     final slotPlacement = slot.placement;
     final adConfig = await config;
     final slotPolicy = adConfig.getPolicy(slotPlacement);
-    final adapter = _adapterRegistry.get(slot.loadedSource!, slot.loadedType!);
+    final adapter = _adapterRegistry!.get(slot.loadedSource!, slot.loadedType!);
 
     _guard.markShowStarted(slotPlacement, slotPolicy);
+    _reportEvent(
+      AdEventType.show,
+      reportPlacement,
+      slot.loadedType!,
+      slot.loadedSource!,
+      slot.adUnitId!,
+      eventName: eventName,
+    );
     final result = await adapter.show(
       placement: reportPlacement,
       placementLabel: placementLabel,
@@ -722,6 +781,27 @@ class AdEngine {
     );
     log.event(event);
     _reporter.report(event);
+  }
+
+  void _reportShowFail({
+    required AdConfig adConfig,
+    required PlacementType placement,
+    required String eventName,
+    required String errorReason,
+  }) {
+    final units = adConfig.getUnits(placement);
+    final unit = units.isNotEmpty
+        ? units.first
+        : null;
+    _reportEvent(
+      AdEventType.showFail,
+      placement,
+      unit?.type ?? AdType.open,
+      unit?.source ?? AdSource.admob,
+      unit?.id ?? placement.name,
+      errorReason: errorReason,
+      eventName: eventName,
+    );
   }
 
   Future<void> preloadPlacements(

@@ -47,6 +47,13 @@ class AdDisplayGuard {
   PlacementType? _lastGlobalPlacement;
   bool _isFullscreenShowing = false;
 
+  void resetForTesting() {
+    _lastShownByPlacement.clear();
+    _lastGlobalShownAt = null;
+    _lastGlobalPlacement = null;
+    _isFullscreenShowing = false;
+  }
+
   /// 检查是否可以展示指定广告位的广告。
   Future<AdGuardResult> canShow({
     required PlacementType placement,
