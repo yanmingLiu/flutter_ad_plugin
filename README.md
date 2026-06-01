@@ -10,6 +10,7 @@
 - [快速接入](#quick-start)
 - [常用 API](#api)
 - [整体架构](#architecture)
+- [AdMob 中介](#mediation)
 - [接入指南](#integration)
 - [广告配置 JSON](#ad-config)
 - [展示时序](#sequence)
@@ -25,6 +26,7 @@
 - 宿主注入埋点：实现 `AdEventReporter`，插件只透传生命周期事件和 `eventName`。
 - 支持开屏、插屏、激励、原生、双原生组合。
 - 支持同广告位多 ID 缓存、公共兜底位、高价位替换、展示冷却策略。
+- 预置 7 个 AdMob 中介适配器（AppLovin / Meta / Pangle / Liftoff / Mintegral / Unity / InMobi），宿主 App 开箱即用。
 - `preloadPlacements()` 是 fire-and-forget，只负责发起批量预加载，不等待所有广告加载完成。
 
 ### 边界
@@ -193,20 +195,61 @@ Core 包含三类对象：
 
 后续接 MAX / TopOn 时，新增 adapter 并注册到 `AdAdapterRegistry` 即可。
 
-### UI
+<a id="mediation"></a>
+## AdMob 中介
 
-`NativeAdView` 和 `DualNativeAdView` 只负责渲染已加载的原生广告对象。插件不负责业务页面布局，也不依赖宿主 UI 框架。
+### 已集成适配器
 
-### 代码规模
+以下 AdMob 中介适配器已作为插件依赖预置，宿主 App **无需额外添加**即可使用：
 
-核心代码集中在 `lib/`：
+| 广告网络 | pub.dev 包 | 版本 |
+|---|---|---|
+| AppLovin | `gma_mediation_applovin` | ^2.6.1 |
+| Meta Audience Network | `gma_mediation_meta` | ^1.5.2 |
+| Pangle | `gma_mediation_pangle` | ^3.6.0 |
+| Liftoff Monetize | `gma_mediation_liftoffmonetize` | ^1.5.0 |
+| Mintegral | `gma_mediation_mintegral` | ^2.1.0 |
+| Unity Ads | `gma_mediation_unity` | ^1.8.0 |
+| InMobi | `gma_mediation_inmobi` | ^2.1.0 |
 
-- `lib/flutter_ad_plugin.dart`：公开 facade。
-- `lib/src/core/`：配置模型和 JSON 解析。
-- `lib/src/engine/`：广告编排和展示守卫。
-- `lib/src/platform/`：广告 SDK 适配层。
-- `lib/src/ui/`：原生广告 Widget。
-- `lib/src/utils/`：日志与埋点事件。
+### 工作原理
+
+`google_mobile_ads` SDK 在运行时会自动检测并启用已安装的中介适配器。插件代码无需任何改动，加载/展示广告时 AdMob 会自动通过中介聚合多家广告网络的流量，`ad.responseInfo.loadedAdapterResponseInfo.adSourceName` 会在埋点事件中透传实际广告来源。
+
+### Pangle 额外要求
+
+Pangle SDK 的 Android 原生依赖托管在 Bytedance 的 Maven 仓库中，**宿主 App 需在其 `android/build.gradle`（或 `android/build.gradle.kts`）的 `allprojects.repositories` 中添加**：
+
+```kotlin
+maven {
+    url = uri("https://artifact.bytedance.com/repository/pangle/")
+}
+```
+
+如果不需要 Pangle，可以移除 `pubspec.yaml` 中的 `gma_mediation_pangle` 依赖。
+
+### iOS SKAdNetwork
+
+各适配器的 SKAdNetwork 标识符由其各自的 iOS 插件自动注入，无需手动配置 `Info.plist`。
+
+### 中介广告位的 JSON 配置
+
+中介广告位与普通 AdMob 广告位的 JSON 配置完全一致，只在 AdMob 后台配置中介组即可，`source` 仍为 `"admob"`：
+
+```json
+{
+  "open": [
+    {
+      "source": "admob",
+      "weight": 3,
+      "type": "open",
+      "id": "ca-app-pub-xxxxxxxx/xxxxxxxx"
+    }
+  ]
+}
+```
+
+在 AdMob 后台将该广告单元配置好中介组后，AdMob 即可自动向 AppLovin / Meta / Pangle 等网络发送广告请求。
 
 <a id="integration"></a>
 ## 接入指南
