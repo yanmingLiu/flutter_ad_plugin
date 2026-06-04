@@ -30,15 +30,11 @@ class _FakeSdkInitializer implements AdSourceSdkInitializer {
 }
 
 class _SuccessAdapter implements AdTypeAdapter {
-  _SuccessAdapter([this._type = AdType.open]);
-
-  final AdType _type;
-
   @override
   AdSource get source => AdSource.admob;
 
   @override
-  AdType get type => _type;
+  AdType get type => AdType.open;
 
   @override
   Future<AdLoadResult<Object>> load({
@@ -62,6 +58,89 @@ class _SuccessAdapter implements AdTypeAdapter {
     VoidCallback? onAdShowed,
     VoidCallback? onClosed,
   }) async {
+    return AdShowResult.success();
+  }
+
+  @override
+  void dispose(Object ad) {}
+}
+
+class _LifecycleReportingAdapter implements AdTypeAdapter {
+  _LifecycleReportingAdapter({required this.succeeds});
+
+  final bool succeeds;
+
+  @override
+  AdSource get source => AdSource.admob;
+
+  @override
+  AdType get type => AdType.open;
+
+  @override
+  Future<AdLoadResult<Object>> load({
+    required PlacementType placement,
+    required AdUnitConfig unit,
+    required Duration timeout,
+    required AdEventReporter reporter,
+    required String eventName,
+    void Function(Object ad, AdType type, String adUnitId)? onLateAdLoaded,
+  }) async {
+    return AdLoadResult.success(ad: Object(), type: type, adUnitId: unit.id);
+  }
+
+  @override
+  Future<AdShowResult> show({
+    required PlacementType placement,
+    String? placementLabel,
+    required String eventName,
+    required Object ad,
+    required AdEventReporter reporter,
+    VoidCallback? onAdShowed,
+    VoidCallback? onClosed,
+  }) async {
+    if (!succeeds) {
+      await reporter.report(
+        AdEvent(
+          eventType: AdEventType.showFail,
+          placement: placement,
+          placementLabel: placementLabel,
+          adType: type,
+          source: source,
+          adUnitId: 'test-unit-id',
+          errorReason: 'fake_show_failed',
+          timestamp: DateTime.now(),
+          eventName: eventName,
+        ),
+      );
+      return AdShowResult.failure('fake_show_failed');
+    }
+
+    onAdShowed?.call();
+    await reporter.report(
+      AdEvent(
+        eventType: AdEventType.showSuccess,
+        placement: placement,
+        placementLabel: placementLabel,
+        adType: type,
+        source: source,
+        adUnitId: 'test-unit-id',
+        timestamp: DateTime.now(),
+        eventName: eventName,
+      ),
+    );
+    onClosed?.call();
+    await reporter.report(
+      AdEvent(
+        eventType: AdEventType.close,
+        placement: placement,
+        placementLabel: placementLabel,
+        adType: type,
+        source: source,
+        adUnitId: 'test-unit-id',
+        timestamp: DateTime.now(),
+        eventName: eventName,
+      ),
+    );
     return AdShowResult.success();
   }
 
@@ -159,6 +238,7 @@ Future<void> _initTestEngine({
   bool isFullscreen = true,
   bool waitForLoadOnShow = true,
   int cacheSize = 1,
+  Map<PlacementType, PlacementPolicy> placementPolicies = const {},
 }) async {
   await AdEngine.instance.initWith(
     configRepository: _configRepo(
@@ -168,6 +248,7 @@ Future<void> _initTestEngine({
       cacheSize: cacheSize,
     ),
     eventReporter: reporter,
+    placementPolicies: placementPolicies,
     adapters: adapters,
     sdkInitializers: [_FakeSdkInitializer()],
   );
@@ -297,24 +378,127 @@ void main() {
   });
 
   group('showFail on no cache', () {
-    test('reports showFail when no ad is cached and waitForLoad is false',
-        () async {
+    test(
+      'reports showFail when no ad is cached and waitForLoad is false',
+      () async {
+        await _initTestEngine(
+          reporter: reporter,
+          adapters: [_SuccessAdapter()],
+          placement: placement,
+          waitForLoadOnShow: false,
+        );
+
+        final result = await AdEngine.instance.show(
+          placement,
+          eventName: 'no_cache_show',
+        );
+        expect(result, isFalse);
+
+        final showFails = reporter.byType(AdEventType.showFail);
+        expect(showFails.length, 1);
+        final showFail = showFails.single;
+        expect(showFail.placement, placement);
+        expect(showFail.eventName, 'no_cache_show');
+        expect(showFail.errorReason, 'no_cache');
+      },
+    );
+  });
+
+  group('caller placement policies', () {
+    test('initWith placementPolicies override repository defaults', () async {
       await _initTestEngine(
-            reporter: reporter,
-            adapters: [_SuccessAdapter()],
-            placement: placement,
-            waitForLoadOnShow: false,
-          );
+        reporter: reporter,
+        adapters: [_SuccessAdapter()],
+        placement: placement,
+        waitForLoadOnShow: false,
+        placementPolicies: {
+          placement: const PlacementPolicy(
+            isFullscreen: true,
+            applySamePlacementCd: false,
+            applyDifferentPlacementCd: false,
+            contributesToGlobalCooldown: false,
+            showNotReadyToast: false,
+            waitForLoadOnShow: true,
+            preferHighValueOnShow: false,
+          ),
+        },
+      );
 
-      final result = await AdEngine.instance.show(placement, eventName: 'no_cache_show');
+      final result = await AdEngine.instance.show(
+        placement,
+        eventName: 'caller_policy',
+      );
+
+      expect(result, isTrue);
+      expect(reporter.byType(AdEventType.loadRequested).length, 1);
+      expect(reporter.byType(AdEventType.show).length, 1);
+      expect(reporter.byType(AdEventType.showFail), isEmpty);
+    });
+  });
+
+  group('show lifecycle callbacks', () {
+    test(
+      'success chain reports show, showSuccess, and close in order',
+      () async {
+        var showedCallbackCount = 0;
+        await _initTestEngine(
+          reporter: reporter,
+          adapters: [_LifecycleReportingAdapter(succeeds: true)],
+          placement: placement,
+        );
+
+        await AdEngine.instance.preload(placement, eventName: 'preload');
+        reporter.clear();
+
+        final result = await AdEngine.instance.show(
+          placement,
+          eventName: 'show_success',
+          onAdShowed: () => showedCallbackCount++,
+        );
+
+        expect(result, isTrue);
+        expect(showedCallbackCount, 1);
+        expect(reporter.events.map((event) => event.eventType).toList(), [
+          AdEventType.show,
+          AdEventType.showSuccess,
+          AdEventType.close,
+        ]);
+        expect(reporter.byType(AdEventType.showFail), isEmpty);
+        expect(
+          reporter.events.every((event) => event.eventName == 'show_success'),
+          isTrue,
+        );
+      },
+    );
+
+    test('failure chain reports show and showFail', () async {
+      await _initTestEngine(
+        reporter: reporter,
+        adapters: [_LifecycleReportingAdapter(succeeds: false)],
+        placement: placement,
+      );
+
+      await AdEngine.instance.preload(placement, eventName: 'preload');
+      reporter.clear();
+
+      final result = await AdEngine.instance.show(
+        placement,
+        eventName: 'show_failure',
+      );
+
       expect(result, isFalse);
-
-      final showFails = reporter.byType(AdEventType.showFail);
-      expect(showFails.length, 1);
-      final showFail = showFails.single;
-      expect(showFail.placement, placement);
-      expect(showFail.eventName, 'no_cache_show');
-      expect(showFail.errorReason, 'no_cache');
+      expect(reporter.events.map((event) => event.eventType).toList(), [
+        AdEventType.show,
+        AdEventType.showFail,
+      ]);
+      final showCount = reporter.byType(AdEventType.show).length;
+      final successCount = reporter.byType(AdEventType.showSuccess).length;
+      final failCount = reporter.byType(AdEventType.showFail).length;
+      expect(showCount, successCount + failCount);
+      expect(
+        reporter.byType(AdEventType.showFail).single.errorReason,
+        'fake_show_failed',
+      );
     });
   });
 

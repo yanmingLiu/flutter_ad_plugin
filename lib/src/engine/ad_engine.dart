@@ -55,6 +55,7 @@ class AdEngine {
   Future<void> initWith({
     required AdConfigRepository configRepository,
     required AdEventReporter eventReporter,
+    Map<PlacementType, PlacementPolicy> placementPolicies = const {},
     AdNotReadyCallback? onAdNotReady,
     List<AdTypeAdapter>? adapters,
     List<AdSourceSdkInitializer>? sdkInitializers,
@@ -62,7 +63,9 @@ class AdEngine {
     if (_initialized) {
       return;
     }
-    _configRepository = configRepository;
+    _configRepository = placementPolicies.isEmpty
+        ? configRepository
+        : _PolicyOverrideConfigRepository(configRepository, placementPolicies);
     _reporter = eventReporter;
     _onAdNotReady = onAdNotReady;
     await init(adapters: adapters, sdkInitializers: sdkInitializers);
@@ -763,9 +766,9 @@ class AdEngine {
   void _reportEvent(
     AdEventType type,
     PlacementType p,
-    AdType t,
-    AdSource s,
-    String id, {
+    AdType? t,
+    AdSource? s,
+    String? id, {
     String? errorReason,
     required String eventName,
   }) {
@@ -790,15 +793,13 @@ class AdEngine {
     required String errorReason,
   }) {
     final units = adConfig.getUnits(placement);
-    final unit = units.isNotEmpty
-        ? units.first
-        : null;
+    final unit = units.isNotEmpty ? units.first : null;
     _reportEvent(
       AdEventType.showFail,
       placement,
-      unit?.type ?? AdType.open,
-      unit?.source ?? AdSource.admob,
-      unit?.id ?? placement.name,
+      unit?.type,
+      unit?.source,
+      unit?.id,
       errorReason: errorReason,
       eventName: eventName,
     );
@@ -880,3 +881,31 @@ class _AdPoolStore {
 }
 
 enum _AdLoadKind { fullscreen, native }
+
+class _PolicyOverrideConfigRepository implements AdConfigRepository {
+  _PolicyOverrideConfigRepository(
+    this._delegate,
+    Map<PlacementType, PlacementPolicy> policies,
+  ) : _policies = Map<PlacementType, PlacementPolicy>.unmodifiable(policies);
+
+  final AdConfigRepository _delegate;
+  final Map<PlacementType, PlacementPolicy> _policies;
+  AdConfig? _cached;
+
+  @override
+  Future<AdConfig> getConfig() async {
+    return _cached ??= _withPolicies(await _delegate.getConfig());
+  }
+
+  AdConfig _withPolicies(AdConfig config) {
+    return AdConfig(
+      loadTimeoutSeconds: config.loadTimeoutSeconds,
+      samePlacementCdSeconds: config.samePlacementCdSeconds,
+      differentPlacementCdSeconds: config.differentPlacementCdSeconds,
+      commonPlacements: config.commonPlacements,
+      highValuePlacement: config.highValuePlacement,
+      placements: config.placements,
+      policies: _policies,
+    );
+  }
+}

@@ -13,20 +13,6 @@ class MyConfigRepository extends DefaultAdConfigRepository {
       'different_placement_cd': 30,
       'common_placements': ['behavior', 'behavior2'],
       'high_value_placement': 'level_h',
-      'placement_policy': {
-        'open': {
-          'apply_same_placement_cd': true,
-          'apply_different_placement_cd': true,
-          'contributes_to_global_cooldown': true,
-          'wait_for_load_on_show': true,
-          'prefer_high_value_on_show': false,
-        },
-        'message': {
-          'wait_for_load_on_show': true,
-          'show_not_ready_toast': true,
-          'not_ready_msg': 'Ad is still loading, please wait a moment.',
-        },
-      },
       'open': [
         {'source': 'admob', 'weight': 3, 'type': 'open', 'id': ids.open},
         {
@@ -101,6 +87,30 @@ class MyConfigRepository extends DefaultAdConfigRepository {
   static String get remoteConfigKey => 'ad_config_json';
 }
 
+Map<PlacementType, PlacementPolicy> buildPlacementPolicies() {
+  return {
+    const PlacementType('open'): const PlacementPolicy(
+      isFullscreen: true,
+      applySamePlacementCd: true,
+      applyDifferentPlacementCd: true,
+      contributesToGlobalCooldown: true,
+      showNotReadyToast: false,
+      waitForLoadOnShow: true,
+      preferHighValueOnShow: false,
+    ),
+    const PlacementType('message'): const PlacementPolicy(
+      isFullscreen: true,
+      applySamePlacementCd: false,
+      applyDifferentPlacementCd: false,
+      contributesToGlobalCooldown: false,
+      showNotReadyToast: true,
+      waitForLoadOnShow: true,
+      preferHighValueOnShow: true,
+      notReadyMsg: 'Ad is still loading, please wait a moment.',
+    ),
+  };
+}
+
 class _AdMobTestIds {
   const _AdMobTestIds({
     required this.open,
@@ -145,9 +155,9 @@ class MyAdEventReporter implements AdEventReporter {
     //   FacebookSDKUtil.logAdImpression(
     //     value: event.revenue!,
     //     currency: event.currency ?? 'USD',
-    //     adType: event.adType.name,
+    //     adType: event.adType?.name,
     //     adScreen: event.eventName,
-    //     adSource: event.source.name,
+    //     adSource: event.source?.name,
     //     adUnitId: event.adUnitId,
     //   );
     // }
@@ -156,10 +166,10 @@ class MyAdEventReporter implements AdEventReporter {
     // FirebaseAnalytics.instance.logEvent(
     //   name: 'ad_${event.eventName}',
     //   parameters: {
-    //     'ad_source': event.source.name,
-    //     'ad_type': event.adType.name,
-    //     'ad_unit_id': event.adUnitId,
-    //     'event_type': event.eventType.name,
+    //     if (event.source != null) 'ad_source': event.source!.name,
+    //     if (event.adType != null) 'ad_type': event.adType!.name,
+    //     if (event.adUnitId != null) 'ad_unit_id': event.adUnitId,
+    //     if (event.eventType != null) 'event_type': event.eventType!.name,
     //     if (event.revenue != null) 'revenue': event.revenue,
     //     if (event.currency != null) 'currency': event.currency,
     //   },

@@ -164,7 +164,6 @@ class PlacementPolicy {
 class AdConfigParser {
   AdConfig parse(Map<String, dynamic> json) {
     final placements = <PlacementType, List<AdUnitConfig>>{};
-    final policies = <PlacementType, PlacementPolicy>{};
 
     json.forEach((key, value) {
       if (value is! List) {
@@ -188,19 +187,6 @@ class AdConfigParser {
       }
     });
 
-    final policyMapRaw = json['placement_policy'];
-    final policyMap = (policyMapRaw is Map)
-        ? Map<String, dynamic>.from(policyMapRaw)
-        : <String, dynamic>{};
-
-    // 为每个有广告单元的广告位生成 Policy
-    placements.forEach((placement, units) {
-      final jsonPolicy = policyMap[placement.name] is Map
-          ? Map<String, dynamic>.from(policyMap[placement.name])
-          : <String, dynamic>{};
-      policies[placement] = _parsePolicy(placement, units, jsonPolicy);
-    });
-
     final commonList = _parsePlacementList(
       json['common_placements'] ?? json['common_placement'],
     );
@@ -222,7 +208,6 @@ class AdConfigParser {
           : commonList,
       highValuePlacement: highValuePlacement,
       placements: placements,
-      policies: policies,
     );
   }
 
@@ -323,41 +308,6 @@ class AdConfigParser {
     final text = value.trim();
     return text.isEmpty ? null : text;
   }
-
-  PlacementPolicy _parsePolicy(
-    PlacementType placement,
-    List<AdUnitConfig> units,
-    Map<String, dynamic> json,
-  ) {
-    Set<AdType>? allowedTypes;
-    final allowedRaw = json['allowed_types'];
-    if (allowedRaw is List) {
-      allowedTypes = allowedRaw
-          .whereType<String>()
-          .map((e) => AdType(e))
-          .toSet();
-    }
-
-    // 自动推断是否为全屏
-    final bool inferredFullscreen = units.any((u) => u.type.isFullscreen);
-
-    return PlacementPolicy(
-      isFullscreen: json['is_fullscreen'] ?? inferredFullscreen,
-      applySamePlacementCd: json['apply_same_placement_cd'] ?? false,
-      applyDifferentPlacementCd: json['apply_different_placement_cd'] ?? false,
-      contributesToGlobalCooldown:
-          json['contributes_to_global_cooldown'] ?? false,
-      showNotReadyToast: json['show_not_ready_toast'] ?? false,
-      waitForLoadOnShow:
-          json['wait_for_load_on_show'] ??
-          json['wait_load_on_show'] ??
-          (placement.name != 'open'),
-      preferHighValueOnShow:
-          json['prefer_high_value_on_show'] ?? (placement.name != 'open'),
-      notReadyMsg: json['not_ready_msg'] as String?,
-      allowedTypes: allowedTypes,
-    );
-  }
 }
 
 abstract class AdConfigRepository {
@@ -369,16 +319,38 @@ class DefaultAdConfigRepository implements AdConfigRepository {
     AdConfigParser? parser,
     Map<String, dynamic> localConfig = const <String, dynamic>{},
     String? localConfigJson,
+    Map<PlacementType, PlacementPolicy> placementPolicies = const {},
   }) : _parser = parser ?? AdConfigParser(),
-       _localConfig = _parseLocalConfig(localConfig, localConfigJson);
+       _localConfig = _parseLocalConfig(localConfig, localConfigJson),
+       _placementPolicies = Map<PlacementType, PlacementPolicy>.unmodifiable(
+         placementPolicies,
+       );
 
   final AdConfigParser _parser;
   final Map<String, dynamic> _localConfig;
+  final Map<PlacementType, PlacementPolicy> _placementPolicies;
   AdConfig? _cached;
 
   @override
   Future<AdConfig> getConfig() async {
-    return _cached ??= _parser.parse(Map<String, dynamic>.from(_localConfig));
+    return _cached ??= _withPlacementPolicies(
+      _parser.parse(Map<String, dynamic>.from(_localConfig)),
+    );
+  }
+
+  AdConfig _withPlacementPolicies(AdConfig config) {
+    if (_placementPolicies.isEmpty) {
+      return config;
+    }
+    return AdConfig(
+      loadTimeoutSeconds: config.loadTimeoutSeconds,
+      samePlacementCdSeconds: config.samePlacementCdSeconds,
+      differentPlacementCdSeconds: config.differentPlacementCdSeconds,
+      commonPlacements: config.commonPlacements,
+      highValuePlacement: config.highValuePlacement,
+      placements: config.placements,
+      policies: _placementPolicies,
+    );
   }
 
   static Map<String, dynamic> _parseLocalConfig(

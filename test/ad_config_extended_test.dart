@@ -134,9 +134,7 @@ void main() {
     });
 
     test('highValuePlacement is null if no level_h and not configured', () {
-      final config = AdConfigParser().parse({
-        'high_value_placement': '',
-      });
+      final config = AdConfigParser().parse({'high_value_placement': ''});
       expect(config.highValuePlacement, isNull);
     });
 
@@ -196,14 +194,8 @@ void main() {
 
       final units = config.getUnits(const PlacementType('test'));
       expect(units, hasLength(2));
-      expect(
-        units[0].cacheKey,
-        'admob_native_0_n1',
-      );
-      expect(
-        units[1].cacheKey,
-        'admob_native_1_n2',
-      );
+      expect(units[0].cacheKey, 'admob_native_0_n1');
+      expect(units[1].cacheKey, 'admob_native_1_n2');
     });
 
     test('fullscreenCacheSizeFor filters by fullscreen type', () {
@@ -227,29 +219,15 @@ void main() {
         ],
       });
 
-      expect(
-        config.nativeCacheSizeFor(const PlacementType('mixed')),
-        3,
-      );
-      expect(
-        config.fullscreenCacheSizeFor(const PlacementType('mixed')),
-        2,
-      );
-      expect(
-        config.cacheSizeFor(const PlacementType('mixed')),
-        3,
-      );
+      expect(config.nativeCacheSizeFor(const PlacementType('mixed')), 3);
+      expect(config.fullscreenCacheSizeFor(const PlacementType('mixed')), 2);
+      expect(config.cacheSizeFor(const PlacementType('mixed')), 3);
     });
 
     test('hasPlacement returns true only for configured placements', () {
       final config = AdConfigParser().parse({
         'open': [
-          {
-            'source': 'admob',
-            'weight': 1,
-            'type': 'open',
-            'id': 'open-1',
-          },
+          {'source': 'admob', 'weight': 1, 'type': 'open', 'id': 'open-1'},
         ],
       });
 
@@ -279,12 +257,7 @@ void main() {
       final config = AdConfigParser().parse({
         'load_timeout': 15,
         'open': [
-          {
-            'source': 'admob',
-            'weight': 1,
-            'type': 'open',
-            'id': 'o1',
-          },
+          {'source': 'admob', 'weight': 1, 'type': 'open', 'id': 'o1'},
         ],
       });
 
@@ -295,12 +268,7 @@ void main() {
     test('getPolicy returns default for non-configured policy', () {
       final config = AdConfigParser().parse({
         'open': [
-          {
-            'source': 'admob',
-            'weight': 1,
-            'type': 'open',
-            'id': 'open-1',
-          },
+          {'source': 'admob', 'weight': 1, 'type': 'open', 'id': 'open-1'},
         ],
       });
 
@@ -310,20 +278,153 @@ void main() {
       expect(policy.waitForLoadOnShow, isFalse);
     });
 
-    test('default policy for non-open placement has waitForLoadOnShow=true', () {
+    test(
+      'default policy for non-open placement has waitForLoadOnShow=true',
+      () {
+        final config = AdConfigParser().parse({
+          'interstitial': [
+            {
+              'source': 'admob',
+              'weight': 1,
+              'type': 'interstitial',
+              'id': 'i-1',
+            },
+          ],
+        });
+
+        final policy = config.getPolicy(const PlacementType('interstitial'));
+        expect(policy.waitForLoadOnShow, isTrue);
+      },
+    );
+
+    test('ignores placement_policy from JSON', () {
       final config = AdConfigParser().parse({
-        'interstitial': [
-          {
-            'source': 'admob',
-            'weight': 1,
-            'type': 'interstitial',
-            'id': 'i-1',
-          },
+        'open': [
+          {'source': 'admob', 'weight': 1, 'type': 'open', 'id': 'o1'},
         ],
+        'placement_policy': {
+          'open': {
+            'apply_same_placement_cd': true,
+            'apply_different_placement_cd': true,
+            'contributes_to_global_cooldown': true,
+            'show_not_ready_toast': true,
+            'wait_for_load_on_show': true,
+            'prefer_high_value_on_show': true,
+            'not_ready_msg': 'ignored',
+          },
+        },
       });
 
-      final policy = config.getPolicy(const PlacementType('interstitial'));
+      final policy = config.getPolicy(const PlacementType('open'));
+      expect(policy.isFullscreen, isTrue);
+      expect(policy.applySamePlacementCd, isFalse);
+      expect(policy.applyDifferentPlacementCd, isFalse);
+      expect(policy.contributesToGlobalCooldown, isFalse);
+      expect(policy.showNotReadyToast, isFalse);
+      expect(policy.waitForLoadOnShow, isFalse);
+      expect(policy.preferHighValueOnShow, isFalse);
+      expect(policy.notReadyMsg, isNull);
+    });
+
+    test('repository placementPolicies override defaults', () async {
+      final repo = DefaultAdConfigRepository(
+        placementPolicies: {
+          const PlacementType('open'): const PlacementPolicy(
+            isFullscreen: true,
+            applySamePlacementCd: true,
+            applyDifferentPlacementCd: true,
+            contributesToGlobalCooldown: true,
+            showNotReadyToast: true,
+            waitForLoadOnShow: true,
+            preferHighValueOnShow: true,
+            notReadyMsg: 'configured by caller',
+          ),
+        },
+        localConfig: {
+          'open': [
+            {'source': 'admob', 'weight': 1, 'type': 'open', 'id': 'o1'},
+          ],
+        },
+      );
+
+      final config = await repo.getConfig();
+      final policy = config.getPolicy(const PlacementType('open'));
+      expect(policy.applySamePlacementCd, isTrue);
+      expect(policy.applyDifferentPlacementCd, isTrue);
+      expect(policy.contributesToGlobalCooldown, isTrue);
+      expect(policy.showNotReadyToast, isTrue);
       expect(policy.waitForLoadOnShow, isTrue);
+      expect(policy.preferHighValueOnShow, isTrue);
+      expect(policy.notReadyMsg, 'configured by caller');
+    });
+
+    test('repository placementPolicies support allowedTypes', () async {
+      final repo = DefaultAdConfigRepository(
+        placementPolicies: {
+          const PlacementType('filtered'): PlacementPolicy(
+            isFullscreen: true,
+            applySamePlacementCd: false,
+            applyDifferentPlacementCd: false,
+            contributesToGlobalCooldown: false,
+            showNotReadyToast: false,
+            waitForLoadOnShow: true,
+            preferHighValueOnShow: false,
+            allowedTypes: {AdType.interstitial, AdType.rewarded},
+          ),
+        },
+        localConfig: {
+          'filtered': [
+            {'source': 'admob', 'weight': 1, 'type': 'native', 'id': 'n1'},
+          ],
+        },
+      );
+
+      final config = await repo.getConfig();
+      final policy = config.getPolicy(const PlacementType('filtered'));
+      expect(policy.supports(AdType.interstitial), isTrue);
+      expect(policy.supports(AdType.rewarded), isTrue);
+      expect(policy.supports(AdType.native), isFalse);
+    });
+
+    test('JSON placement_policy does not override default policies', () {
+      final config = AdConfigParser().parse({
+        'open': [
+          {'source': 'admob', 'weight': 1, 'type': 'open', 'id': 'o1'},
+        ],
+        'level': [
+          {'source': 'admob', 'weight': 1, 'type': 'interstitial', 'id': 'i1'},
+        ],
+        'placement_policy': {
+          'open': {
+            'is_fullscreen': 'maybe',
+            'apply_same_placement_cd': 2,
+            'apply_different_placement_cd': 'no',
+            'contributes_to_global_cooldown': 'off',
+            'show_not_ready_toast': 'false',
+            'wait_load_on_show': 'yes',
+            'prefer_high_value_on_show': null,
+          },
+          'level': {
+            'is_fullscreen': 2,
+            'wait_for_load_on_show': 'later',
+            'prefer_high_value_on_show': 3,
+          },
+        },
+      });
+
+      final openPolicy = config.getPolicy(const PlacementType('open'));
+      expect(openPolicy.isFullscreen, isTrue);
+      expect(openPolicy.applySamePlacementCd, isFalse);
+      expect(openPolicy.applyDifferentPlacementCd, isFalse);
+      expect(openPolicy.contributesToGlobalCooldown, isFalse);
+      expect(openPolicy.showNotReadyToast, isFalse);
+      expect(openPolicy.waitForLoadOnShow, isFalse);
+      expect(openPolicy.preferHighValueOnShow, isFalse);
+
+      final levelPolicy = config.getPolicy(const PlacementType('level'));
+      expect(levelPolicy.isFullscreen, isTrue);
+      expect(levelPolicy.waitForLoadOnShow, isTrue);
+      expect(levelPolicy.preferHighValueOnShow, isTrue);
     });
 
     group('PlacementPolicy.isFullscreen auto-inference', () {
@@ -339,22 +440,23 @@ void main() {
           ],
         });
 
-        expect(config.getPolicy(const PlacementType('full')).isFullscreen, isTrue);
+        expect(
+          config.getPolicy(const PlacementType('full')).isFullscreen,
+          isTrue,
+        );
       });
 
       test('isFullscreen=false when placement has only native units', () {
         final config = AdConfigParser().parse({
           'only_native': [
-            {
-              'source': 'admob',
-              'weight': 1,
-              'type': 'native',
-              'id': 'n1',
-            },
+            {'source': 'admob', 'weight': 1, 'type': 'native', 'id': 'n1'},
           ],
         });
 
-        expect(config.getPolicy(const PlacementType('only_native')).isFullscreen, isFalse);
+        expect(
+          config.getPolicy(const PlacementType('only_native')).isFullscreen,
+          isFalse,
+        );
       });
     });
 
@@ -380,12 +482,7 @@ void main() {
       test('supports native only when not fullscreen', () {
         final config = AdConfigParser().parse({
           'only_native': [
-            {
-              'source': 'admob',
-              'weight': 1,
-              'type': 'native',
-              'id': 'n1',
-            },
+            {'source': 'admob', 'weight': 1, 'type': 'native', 'id': 'n1'},
           ],
         });
 
@@ -393,36 +490,14 @@ void main() {
         expect(policy.supports(AdType.native), isTrue);
         expect(policy.supports(AdType.interstitial), isFalse);
       });
-
-      test('respects allowedTypes from JSON policy', () {
-        final config = AdConfigParser().parse({
-          'filtered': [
-            {
-              'source': 'admob',
-              'weight': 1,
-              'type': 'native',
-              'id': 'n1',
-            },
-          ],
-          'placement_policy': {
-            'filtered': {
-              'allowed_types': ['interstitial', 'rewarded'],
-            },
-          },
-        });
-
-        final policy = config.getPolicy(const PlacementType('filtered'));
-        expect(policy.supports(AdType.interstitial), isTrue);
-        expect(policy.supports(AdType.rewarded), isTrue);
-        expect(policy.supports(AdType.native), isFalse);
-      });
     });
   });
 
   group('DefaultAdConfigRepository', () {
     test('parses local JSON string', () async {
       final repo = DefaultAdConfigRepository(
-        localConfigJson: '{"load_timeout": 5, "test_p": [{"source":"admob","weight":1,"type":"native","id":"n1"}]}',
+        localConfigJson:
+            '{"load_timeout": 5, "test_p": [{"source":"admob","weight":1,"type":"native","id":"n1"}]}',
       );
       final config = await repo.getConfig();
       expect(config.loadTimeoutSeconds, 5);

@@ -18,23 +18,38 @@ void main() {
   });
 
   group('AdEvent', () {
-    test('constructs with required fields only', () {
+    test('constructs without fields', () {
+      final event = AdEvent();
+
+      expect(event.eventType, isNull);
+      expect(event.placement, isNull);
+      expect(event.placementLabel, isNull);
+      expect(event.adType, isNull);
+      expect(event.source, isNull);
+      expect(event.adUnitId, isNull);
+      expect(event.timestamp, isNull);
+      expect(event.eventName, isNull);
+      expect(event.revenue, isNull);
+      expect(event.currency, isNull);
+      expect(event.errorCode, isNull);
+      expect(event.errorReason, isNull);
+      expect(event.network, isNull);
+    });
+
+    test('constructs with partial fields', () {
       final now = DateTime.now();
       final event = AdEvent(
         eventType: AdEventType.loadRequested,
         placement: const PlacementType('open'),
-        adType: AdType.open,
-        source: AdSource.admob,
-        adUnitId: 'unit-1',
         timestamp: now,
         eventName: 'cold_start',
       );
 
       expect(event.eventType, AdEventType.loadRequested);
       expect(event.placement, const PlacementType('open'));
-      expect(event.adType, AdType.open);
-      expect(event.source, AdSource.admob);
-      expect(event.adUnitId, 'unit-1');
+      expect(event.adType, isNull);
+      expect(event.source, isNull);
+      expect(event.adUnitId, isNull);
       expect(event.timestamp, now);
       expect(event.eventName, 'cold_start');
       expect(event.placementLabel, isNull);
@@ -108,6 +123,18 @@ void main() {
   });
 
   group('AdEvent.toJson', () {
+    test('empty event serializes null fields', () {
+      final json = AdEvent().toJson();
+
+      expect(json['event_type'], isNull);
+      expect(json['placement'], isNull);
+      expect(json['ad_type'], isNull);
+      expect(json['ad_source'], isNull);
+      expect(json['ad_unit_id'], isNull);
+      expect(json['timestamp'], isNull);
+      expect(json['event_name'], isNull);
+    });
+
     test('basic event serializes correctly', () {
       final now = DateTime.utc(2026, 1, 15, 10, 30, 0);
       final event = AdEvent(

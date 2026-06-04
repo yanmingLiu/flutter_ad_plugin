@@ -25,6 +25,7 @@ Future<void> main() async {
   await FlutterAdPlugin.init(
     configRepository: MyConfigRepository(),
     eventReporter: MyAdEventReporter(),
+    placementPolicies: buildPlacementPolicies(),
   );
 
   FlutterAdPlugin.verboseLogging = true;

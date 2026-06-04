@@ -348,13 +348,14 @@ FlutterAdPlugin.verboseLogging = true;
 await FlutterAdPlugin.init(
   configRepository: MyConfigRepository(remoteConfigService),
   eventReporter: MyAdEventReporter(),
+  placementPolicies: buildPlacementPolicies(),
   onAdNotReady: (event) {
     // 可选：根据 event.message 弹 toast/snackbar/dialog。
   },
 );
 ```
 
-`onAdNotReady` 只在 `placement_policy.show_not_ready_toast=true` 且无广告可展示时触发。插件不会自己弹 UI。
+展示策略不从 JSON 读取，由宿主通过 `placementPolicies` 传入。`onAdNotReady` 只在对应 `PlacementPolicy.showNotReadyToast=true` 且无广告可展示时触发。插件不会自己弹 UI。
 
 ### 4. 冷启动预加载和开屏
 
@@ -469,24 +470,6 @@ final ads = FlutterAdPlugin.getNativeAds(
   "different_placement_cd": 30,
   "common_placements": ["behavior", "behavior2"],
   "high_value_placement": "level_h",
-  "placement_policy": {
-    "open": {
-      "is_fullscreen": true,
-      "apply_same_placement_cd": true,
-      "apply_different_placement_cd": true,
-      "contributes_to_global_cooldown": true,
-      "wait_for_load_on_show": false,
-      "prefer_high_value_on_show": false
-    },
-    "home": {
-      "is_fullscreen": false
-    },
-    "message": {
-      "wait_for_load_on_show": true,
-      "show_not_ready_toast": true,
-      "not_ready_msg": "Ad is still loading, please wait a moment."
-    }
-  },
   "open": [
     {
       "source": "admob",
@@ -539,7 +522,6 @@ final ads = FlutterAdPlugin.getNativeAds(
 | `different_placement_cd` | number | `30` | 跨广告位展示冷却，单位秒 |
 | `common_placements` | string[] | `["behavior", "behavior2"]` | 请求未配置广告位时的兜底广告位列表 |
 | `high_value_placement` | string | `level_h` 如果存在 | 高价值全屏广告位 |
-| `placement_policy` | object | 自动推导 | 展示策略 |
 
 ### 广告单元字段
 
@@ -558,26 +540,54 @@ final ads = FlutterAdPlugin.getNativeAds(
 
 `id`、`id2`、`id3...`、`ids` 会展开成多个 `AdUnitConfig`。同一个 placement 因此可以缓存多个广告对象，`getNativeAds(..., count: 2)` 会从缓存里取多个原生广告。
 
-### placement_policy
+### 展示策略
+
+`AdConfigParser` 不解析 JSON 中的 `placement_policy`。展示策略由宿主代码在初始化时通过 `placementPolicies` 传入：
+
+```dart
+Map<PlacementType, PlacementPolicy> buildPlacementPolicies() {
+  return {
+    const PlacementType('open'): const PlacementPolicy(
+      isFullscreen: true,
+      applySamePlacementCd: true,
+      applyDifferentPlacementCd: true,
+      contributesToGlobalCooldown: true,
+      showNotReadyToast: false,
+      waitForLoadOnShow: true,
+      preferHighValueOnShow: false,
+    ),
+    const PlacementType('message'): const PlacementPolicy(
+      isFullscreen: true,
+      applySamePlacementCd: false,
+      applyDifferentPlacementCd: false,
+      contributesToGlobalCooldown: false,
+      showNotReadyToast: true,
+      waitForLoadOnShow: true,
+      preferHighValueOnShow: true,
+      notReadyMsg: 'Ad is still loading, please wait a moment.',
+    ),
+  };
+}
+```
 
 | 字段 | 默认值 | 说明 |
 |---|---|---|
-| `is_fullscreen` | 根据候选类型推导 | 是否进入全屏展示链路 |
-| `apply_same_placement_cd` | `false` | 是否启用同广告位冷却 |
-| `apply_different_placement_cd` | `false` | 是否启用跨广告位冷却 |
-| `contributes_to_global_cooldown` | `false` | 成功展示后是否写入全局冷却时间 |
-| `show_not_ready_toast` | `false` | 无广告可展示时是否触发 `onAdNotReady` |
-| `not_ready_msg` | 默认英文文案 | 传给 `onAdNotReady` 的建议文案 |
-| `wait_for_load_on_show` | 非 open 默认为 `true` | `show()` 无缓存时是否等待加载 |
-| `prefer_high_value_on_show` | 非 open 默认为 `true` | 展示固定广告位时是否优先尝试高价位缓存 |
-| `allowed_types` | 空 | 限定当前 placement 允许的广告类型 |
+| `isFullscreen` | 根据候选类型推导 | 是否进入全屏展示链路 |
+| `applySamePlacementCd` | `false` | 是否启用同广告位冷却 |
+| `applyDifferentPlacementCd` | `false` | 是否启用跨广告位冷却 |
+| `contributesToGlobalCooldown` | `false` | 成功展示后是否写入全局冷却时间 |
+| `showNotReadyToast` | `false` | 无广告可展示时是否触发 `onAdNotReady` |
+| `notReadyMsg` | 默认英文文案 | 传给 `onAdNotReady` 的建议文案 |
+| `waitForLoadOnShow` | 非 open 默认为 `true` | `show()` 无缓存时是否等待加载 |
+| `preferHighValueOnShow` | 非 open 默认为 `true` | 展示固定广告位时是否优先尝试高价位缓存 |
+| `allowedTypes` | 空 | 限定当前 placement 允许的广告类型 |
 
 ### 默认推导规则
 
-- placement 中只要包含全屏类型，默认 `is_fullscreen=true`。
-- `open` 默认 `wait_for_load_on_show=false`、`prefer_high_value_on_show=false`。
-- 其他 placement 默认 `wait_for_load_on_show=true`、`prefer_high_value_on_show=true`。
-- `allowed_types` 不配置时，全屏 placement 支持全屏和原生候选，非全屏 placement 只支持原生候选。
+- placement 中只要包含全屏类型，默认 `isFullscreen=true`。
+- `open` 默认 `waitForLoadOnShow=false`、`preferHighValueOnShow=false`。
+- 其他 placement 默认 `waitForLoadOnShow=true`、`preferHighValueOnShow=true`。
+- `allowedTypes` 不配置时，全屏 placement 支持全屏和原生候选，非全屏 placement 只支持原生候选。
 
 ### 公共兜底位
 
@@ -601,46 +611,6 @@ final ads = FlutterAdPlugin.getNativeAds(
   count: 2,
   eventName: 'play_middle',
 );
-```
-
-### 推荐配置
-
-`placement_policy` 中的开屏策略：
-
-```json
-{
-  "open": {
-    "is_fullscreen": true,
-    "apply_same_placement_cd": true,
-    "apply_different_placement_cd": true,
-    "contributes_to_global_cooldown": true,
-    "wait_for_load_on_show": false,
-    "prefer_high_value_on_show": false
-  }
-}
-```
-
-`placement_policy` 中的激励 / 消息奖励策略：
-
-```json
-{
-  "message": {
-    "is_fullscreen": true,
-    "wait_for_load_on_show": true,
-    "show_not_ready_toast": true,
-    "not_ready_msg": "Ad is still loading, please wait a moment."
-  }
-}
-```
-
-`placement_policy` 中的原生策略：
-
-```json
-{
-  "home": {
-    "is_fullscreen": false
-  }
-}
 ```
 
 <a id="sequence"></a>
@@ -702,7 +672,7 @@ sequenceDiagram
   Engine->>Engine: resolve common/high-value placement
   Engine->>Guard: canShow(...)
   Guard-->>Engine: allowed / blocked
-  alt no cache and wait_for_load_on_show
+  alt no cache and waitForLoadOnShow
     Engine->>Adapter: load(unit)
     Adapter-->>Engine: AdLoadResult
   end
@@ -770,7 +740,7 @@ sequenceDiagram
 
   App->>Engine: show(placement)
   Engine->>Engine: no cache / load failed
-  alt show_not_ready_toast and onAdNotReady != null
+  alt showNotReadyToast and onAdNotReady != null
     Engine-->>App: onAdNotReady(event)
   end
   Engine-->>App: false

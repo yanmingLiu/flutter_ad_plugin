@@ -447,7 +447,7 @@ class AdmobNativeAdapter implements AdTypeAdapter {
   }) async {
     final completer = Completer<AdLoadResult<Object>>();
 
-    Timer(timeout, () {
+    final timer = Timer(timeout, () {
       if (!completer.isCompleted) {
         log.v(
           '❌ [adapter_load] timeout: source=${source.name} type=${type.name} '
@@ -504,16 +504,19 @@ class AdmobNativeAdapter implements AdTypeAdapter {
           }
         },
         onAdClicked: (ad) {
+          final attribution = _attributions[ad];
+          final reportPlacement = attribution?.placement ?? placement;
           _reportLifecycleEvent(
             reporter,
             AdEvent(
               eventType: AdEventType.clicked,
-              placement: placement,
+              placement: reportPlacement,
+              placementLabel: attribution?.placementLabel,
               adType: type,
               source: source,
               adUnitId: unit.id,
               timestamp: DateTime.now(),
-              eventName: eventName,
+              eventName: attribution?.eventName ?? eventName,
               network: ad.responseInfo?.loadedAdapterResponseInfo?.adSourceName,
             ),
           );
@@ -537,7 +540,7 @@ class AdmobNativeAdapter implements AdTypeAdapter {
       ),
     );
     await ad.load();
-    return completer.future;
+    return completer.future.whenComplete(timer.cancel);
   }
 
   @override

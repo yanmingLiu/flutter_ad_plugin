@@ -21,52 +21,52 @@ enum AdEventType {
 /// 用于在埋点系统中区分场景（如 `open_cold`、`open_hot`、`cold_load` 等）。
 /// 插件不做任何处理，原样透传。
 class AdEvent {
-  final AdEventType eventType;
-  final PlacementType placement;
+  final AdEventType? eventType;
+  final PlacementType? placement;
   final String? placementLabel;
-  final AdType adType;
-  final AdSource source;
-  final String adUnitId;
+  final AdType? adType;
+  final AdSource? source;
+  final String? adUnitId;
   final double? revenue; // valueMicros from AdMob onPaidEvent
   final String? currency;
   final int? errorCode;
   final String? errorReason;
-  final DateTime timestamp;
+  final DateTime? timestamp;
 
   /// 宿主传入的广告场景，插件原样透传。
-  final String eventName;
+  final String? eventName;
 
   final String? network;
 
   AdEvent({
-    required this.eventType,
-    required this.placement,
+    this.eventType,
+    this.placement,
     this.placementLabel,
-    required this.adType,
-    required this.source,
-    required this.adUnitId,
+    this.adType,
+    this.source,
+    this.adUnitId,
     this.revenue,
     this.currency,
     this.errorCode,
     this.errorReason,
-    required this.timestamp,
-    required this.eventName,
+    this.timestamp,
+    this.eventName,
     this.network,
   });
 
   Map<String, Object?> toJson() {
     return {
-      'event_type': eventType.name,
-      'placement': placement.name,
+      'event_type': eventType?.name,
+      'placement': placement?.name,
       'placement_label': placementLabel,
-      'ad_type': adType.name,
-      'ad_source': source.name,
+      'ad_type': adType?.name,
+      'ad_source': source?.name,
       'ad_unit_id': adUnitId,
       'revenue': revenue,
       'currency': currency,
       'error_code': errorCode,
       'error_reason': errorReason,
-      'timestamp': timestamp.toIso8601String(),
+      'timestamp': timestamp?.toIso8601String(),
       'event_name': eventName,
       'network': network,
     };

@@ -13,21 +13,19 @@ class AppLogger {
 
   void event(AdEvent event) {
     final type = event.eventType;
-    final placement = event.placement.name.padRight(14);
-    final adType = event.adType.name.padRight(13);
+    final placement = (event.placement?.name ?? '-').padRight(14);
+    final adType = (event.adType?.name ?? '-').padRight(13);
     final adId = _formatAdUnitId(event.adUnitId).padRight(12);
-    final eventName = event.eventName.padRight(14);
+    final eventName = (event.eventName ?? '-').padRight(14);
 
-    if (!verboseEnabled && !type._printsByDefault) {
+    if (!verboseEnabled && !(type?._printsByDefault ?? false)) {
       return;
     }
 
-    final label = _labelFor(type);
+    final label = type == null ? 'EVENT' : _labelFor(type);
     final extra = _extraFields(event);
 
-    debugPrint(
-      '[ad] $label $placement $adType $adId $eventName$extra',
-    );
+    debugPrint('[ad] $label $placement $adType $adId $eventName$extra');
   }
 
   void v(Object message) {
@@ -88,7 +86,10 @@ String _extraFields(AdEvent event) {
   return buf.toString();
 }
 
-String _formatAdUnitId(String adUnitId) {
+String _formatAdUnitId(String? adUnitId) {
+  if (adUnitId == null || adUnitId.isEmpty) {
+    return '-';
+  }
   final idx = adUnitId.lastIndexOf('/');
   if (idx >= 0 && idx < adUnitId.length - 1) {
     return '...${adUnitId.substring(idx + 1)}';

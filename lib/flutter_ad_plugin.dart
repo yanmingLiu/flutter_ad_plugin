@@ -37,11 +37,13 @@ class FlutterAdPlugin {
   static Future<void> init({
     required AdConfigRepository configRepository,
     required AdEventReporter eventReporter,
+    Map<PlacementType, PlacementPolicy> placementPolicies = const {},
     AdNotReadyCallback? onAdNotReady,
   }) {
     return AdEngine.instance.initWith(
       configRepository: configRepository,
       eventReporter: eventReporter,
+      placementPolicies: placementPolicies,
       onAdNotReady: onAdNotReady,
     );
   }
