@@ -1,4 +1,4 @@
-import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart';
 import 'package:flutter_ad_plugin/src/core/ad_config.dart';
 import 'package:flutter_ad_plugin/src/core/ad_enums.dart';
 import 'package:flutter_ad_plugin/src/core/ad_models.dart';
@@ -43,6 +43,7 @@ class _SuccessAdapter implements AdTypeAdapter {
     required Duration timeout,
     required AdEventReporter reporter,
     required String eventName,
+    bool renderAsFullscreen = false,
     void Function(Object ad, AdType type, String adUnitId)? onLateAdLoaded,
   }) async {
     return AdLoadResult.success(ad: Object(), type: type, adUnitId: unit.id);
@@ -51,12 +52,15 @@ class _SuccessAdapter implements AdTypeAdapter {
   @override
   Future<AdShowResult> show({
     required PlacementType placement,
+    BuildContext? context,
     String? placementLabel,
     required String eventName,
     required Object ad,
     required AdEventReporter reporter,
     VoidCallback? onAdShowed,
     VoidCallback? onClosed,
+    int closePassThroughPercent = 0,
+    AdFullScreenNativeStyle style = const AdFullScreenNativeStyle(),
   }) async {
     return AdShowResult.success();
   }
@@ -83,6 +87,7 @@ class _LifecycleReportingAdapter implements AdTypeAdapter {
     required Duration timeout,
     required AdEventReporter reporter,
     required String eventName,
+    bool renderAsFullscreen = false,
     void Function(Object ad, AdType type, String adUnitId)? onLateAdLoaded,
   }) async {
     return AdLoadResult.success(ad: Object(), type: type, adUnitId: unit.id);
@@ -91,12 +96,15 @@ class _LifecycleReportingAdapter implements AdTypeAdapter {
   @override
   Future<AdShowResult> show({
     required PlacementType placement,
+    BuildContext? context,
     String? placementLabel,
     required String eventName,
     required Object ad,
     required AdEventReporter reporter,
     VoidCallback? onAdShowed,
     VoidCallback? onClosed,
+    int closePassThroughPercent = 0,
+    AdFullScreenNativeStyle style = const AdFullScreenNativeStyle(),
   }) async {
     if (!succeeds) {
       await reporter.report(
@@ -148,6 +156,51 @@ class _LifecycleReportingAdapter implements AdTypeAdapter {
   void dispose(Object ad) {}
 }
 
+class _NativeAdapter implements AdTypeAdapter {
+  final List<bool> renderAsFullscreenRequests = [];
+  int? lastClosePassThroughPercent;
+
+  @override
+  AdSource get source => AdSource.admob;
+
+  @override
+  AdType get type => AdType.native;
+
+  @override
+  Future<AdLoadResult<Object>> load({
+    required PlacementType placement,
+    required AdUnitConfig unit,
+    required Duration timeout,
+    required AdEventReporter reporter,
+    required String eventName,
+    bool renderAsFullscreen = false,
+    void Function(Object ad, AdType type, String adUnitId)? onLateAdLoaded,
+  }) async {
+    renderAsFullscreenRequests.add(renderAsFullscreen);
+    return AdLoadResult.success(ad: Object(), type: type, adUnitId: unit.id);
+  }
+
+  @override
+  Future<AdShowResult> show({
+    required PlacementType placement,
+    BuildContext? context,
+    String? placementLabel,
+    required String eventName,
+    required Object ad,
+    required AdEventReporter reporter,
+    VoidCallback? onAdShowed,
+    VoidCallback? onClosed,
+    int closePassThroughPercent = 0,
+    AdFullScreenNativeStyle style = const AdFullScreenNativeStyle(),
+  }) async {
+    lastClosePassThroughPercent = closePassThroughPercent;
+    return AdShowResult.success();
+  }
+
+  @override
+  void dispose(Object ad) {}
+}
+
 class _ThrowingLoadAdapter implements AdTypeAdapter {
   final Object error;
 
@@ -165,6 +218,7 @@ class _ThrowingLoadAdapter implements AdTypeAdapter {
     required Duration timeout,
     required AdEventReporter reporter,
     required String eventName,
+    bool renderAsFullscreen = false,
     void Function(Object ad, AdType type, String adUnitId)? onLateAdLoaded,
   }) async {
     throw error;
@@ -173,12 +227,15 @@ class _ThrowingLoadAdapter implements AdTypeAdapter {
   @override
   Future<AdShowResult> show({
     required PlacementType placement,
+    BuildContext? context,
     String? placementLabel,
     required String eventName,
     required Object ad,
     required AdEventReporter reporter,
     VoidCallback? onAdShowed,
     VoidCallback? onClosed,
+    int closePassThroughPercent = 0,
+    AdFullScreenNativeStyle style = const AdFullScreenNativeStyle(),
   }) async {
     return AdShowResult.failure('not_implemented');
   }
@@ -192,6 +249,7 @@ AdConfigRepository _configRepo({
   bool isFullscreen = true,
   bool waitForLoadOnShow = true,
   int cacheSize = 1,
+  AdType? adType,
 }) {
   final config = AdConfig(
     loadTimeoutSeconds: 7,
@@ -202,7 +260,7 @@ AdConfigRepository _configRepo({
         AdUnitConfig(
           source: AdSource.admob,
           weight: 1,
-          type: isFullscreen ? AdType.open : AdType.native,
+          type: adType ?? (isFullscreen ? AdType.open : AdType.native),
           id: 'test-unit-id',
           poolSize: cacheSize,
         ),
@@ -223,6 +281,8 @@ AdConfigRepository _configRepo({
   return _StubConfigRepo(config);
 }
 
+AdConfigRepository _multiConfigRepo(AdConfig config) => _StubConfigRepo(config);
+
 class _StubConfigRepo implements AdConfigRepository {
   final AdConfig config;
   const _StubConfigRepo(this.config);
@@ -238,6 +298,8 @@ Future<void> _initTestEngine({
   bool isFullscreen = true,
   bool waitForLoadOnShow = true,
   int cacheSize = 1,
+  AdType? adType,
+  int nativeAdCloseClickPercent = 0,
   Map<PlacementType, PlacementPolicy> placementPolicies = const {},
 }) async {
   await AdEngine.instance.initWith(
@@ -246,11 +308,13 @@ Future<void> _initTestEngine({
       isFullscreen: isFullscreen,
       waitForLoadOnShow: waitForLoadOnShow,
       cacheSize: cacheSize,
+      adType: adType,
     ),
     eventReporter: reporter,
     placementPolicies: placementPolicies,
     adapters: adapters,
     sdkInitializers: [_FakeSdkInitializer()],
+    nativeAdCloseClickPercent: nativeAdCloseClickPercent,
   );
 }
 
@@ -321,6 +385,118 @@ void main() {
       final failedCount = reporter.byType(AdEventType.loadFailed).length;
       expect(requestedCount, succeededCount + failedCount);
     });
+
+    test(
+      'fullscreen placement can preload native with fullscreen renderer',
+      () async {
+        final adapter = _NativeAdapter();
+        await _initTestEngine(
+          reporter: reporter,
+          adapters: [adapter],
+          placement: placement,
+          isFullscreen: true,
+          adType: AdType.native,
+          nativeAdCloseClickPercent: 37,
+        );
+
+        final loaded = await AdEngine.instance.preload(
+          placement,
+          eventName: 'fullscreen_native_preload',
+        );
+        reporter.clear();
+        final shown = await AdEngine.instance.show(
+          placement,
+          eventName: 'fullscreen_native_show',
+          closePassThroughPercent: 12,
+        );
+
+        expect(loaded, isTrue);
+        expect(shown, isTrue);
+        expect(adapter.renderAsFullscreenRequests, [isTrue]);
+        expect(adapter.lastClosePassThroughPercent, 12);
+        expect(reporter.byType(AdEventType.show).single.adType, AdType.native);
+      },
+    );
+
+    test(
+      'regular native preload does not request fullscreen renderer',
+      () async {
+        final adapter = _NativeAdapter();
+        await _initTestEngine(
+          reporter: reporter,
+          adapters: [adapter],
+          placement: const PlacementType('article_native'),
+          isFullscreen: false,
+          adType: AdType.native,
+        );
+
+        final loaded = await AdEngine.instance.preloadNative(
+          const PlacementType('article_native'),
+          eventName: 'inline_native_preload',
+        );
+
+        expect(loaded, isTrue);
+        expect(adapter.renderAsFullscreenRequests, [isFalse]);
+      },
+    );
+
+    test(
+      'preloadPlacements does not duplicate fullscreen native as inline native',
+      () async {
+        final adapter = _NativeAdapter();
+        const fullscreenPlacement = PlacementType('message');
+        const inlinePlacement = PlacementType('article_native');
+        await AdEngine.instance.initWith(
+          configRepository: _multiConfigRepo(
+            AdConfig(
+              loadTimeoutSeconds: 7,
+              samePlacementCdSeconds: 0,
+              differentPlacementCdSeconds: 0,
+              placements: {
+                fullscreenPlacement: [
+                  AdUnitConfig(
+                    source: AdSource.admob,
+                    weight: 4,
+                    type: AdType.native,
+                    id: 'fullscreen-native-unit',
+                  ),
+                ],
+                inlinePlacement: [
+                  AdUnitConfig(
+                    source: AdSource.admob,
+                    weight: 1,
+                    type: AdType.native,
+                    id: 'inline-native-unit',
+                  ),
+                ],
+              },
+              policies: {
+                fullscreenPlacement: PlacementPolicy(
+                  isFullscreen: true,
+                  applySamePlacementCd: false,
+                  applyDifferentPlacementCd: false,
+                  contributesToGlobalCooldown: false,
+                  showNotReadyToast: false,
+                  waitForLoadOnShow: true,
+                  preferHighValueOnShow: false,
+                ),
+              },
+            ),
+          ),
+          eventReporter: reporter,
+          adapters: [adapter],
+          sdkInitializers: [_FakeSdkInitializer()],
+        );
+
+        await AdEngine.instance.preloadPlacements(const [
+          fullscreenPlacement,
+          inlinePlacement,
+        ], eventName: 'cold_start');
+        await Future<void>.delayed(Duration.zero);
+
+        expect(adapter.renderAsFullscreenRequests, [isTrue, isFalse]);
+      },
+    );
   });
 
   group('show event chain', () {

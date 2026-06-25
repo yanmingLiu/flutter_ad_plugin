@@ -1,6 +1,6 @@
 import 'dart:async';
 
-import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart';
 
 import '../core/ad_config.dart';
 import '../core/ad_enums.dart';
@@ -38,6 +38,9 @@ class AdEngine {
   AdNotReadyCallback? _onAdNotReady;
   AdSdkInitializer? _sdkInitializer;
   AdAdapterRegistry? _adapterRegistry;
+  int _nativeAdCloseClickPercent = 0;
+  AdFullScreenNativeStyle _fullScreenNativeStyle =
+      const AdFullScreenNativeStyle();
   final AdDisplayGuard _guard = AdDisplayGuard();
 
   _AdPoolStore _fullscreenPool = _AdPoolStore();
@@ -59,6 +62,9 @@ class AdEngine {
     AdNotReadyCallback? onAdNotReady,
     List<AdTypeAdapter>? adapters,
     List<AdSourceSdkInitializer>? sdkInitializers,
+    int nativeAdCloseClickPercent = 0,
+    AdFullScreenNativeStyle fullScreenNativeStyle =
+        const AdFullScreenNativeStyle(),
   }) async {
     if (_initialized) {
       return;
@@ -68,6 +74,8 @@ class AdEngine {
         : _PolicyOverrideConfigRepository(configRepository, placementPolicies);
     _reporter = eventReporter;
     _onAdNotReady = onAdNotReady;
+    _nativeAdCloseClickPercent = nativeAdCloseClickPercent.clamp(0, 100);
+    _fullScreenNativeStyle = fullScreenNativeStyle;
     await init(adapters: adapters, sdkInitializers: sdkInitializers);
   }
 
@@ -102,6 +110,8 @@ class AdEngine {
     instance._initialized = false;
     instance._sdkInitializer = null;
     instance._adapterRegistry = null;
+    instance._nativeAdCloseClickPercent = 0;
+    instance._fullScreenNativeStyle = const AdFullScreenNativeStyle();
     instance._fullscreenPool = _AdPoolStore();
     instance._fullscreenLoadingFutures.clear();
     instance._nativeLoadingFutures.clear();
@@ -162,13 +172,17 @@ class AdEngine {
             .getUnits(placement)
             .where((unit) => unit.isValid)
             .where((unit) => policy.supports(unit.type))
-            .where((unit) => unit.type.isFullscreen)
+            .where(
+              (unit) =>
+                  unit.type.isFullscreen ||
+                  (policy.isFullscreen && unit.type == AdType.native),
+            )
             .where(
               (unit) => !_fullscreenPool.hasCacheKey(placement, unit.cacheKey),
             );
       },
-      adapterTypeFor: (unit) => unit.type,
-      loadedTypeFor: (unit) => unit.type,
+      adapterTypeFor: (unit) => unit.type.isNative ? AdType.native : unit.type,
+      loadedTypeFor: (unit) => unit.type.isNative ? AdType.native : unit.type,
     );
   }
 
@@ -179,12 +193,13 @@ class AdEngine {
     String adUnitId,
     String cacheKey,
     AdSource source,
+    _AdLoadKind kind,
   ) async {
     final config = await _configRepository.getConfig();
-    final targetCount = type.isNative
+    final targetCount = kind == _AdLoadKind.native
         ? config.nativeCacheSizeFor(placement)
         : config.fullscreenCacheSizeFor(placement);
-    final pool = type.isNative ? _nativePool : _fullscreenPool;
+    final pool = kind == _AdLoadKind.native ? _nativePool : _fullscreenPool;
     final current = pool[placement];
     final hasSameAd = pool.hasCacheKey(placement, cacheKey);
     if (hasSameAd || (current?.count ?? 0) >= targetCount) {
@@ -208,10 +223,13 @@ class AdEngine {
 
   Future<bool> show(
     PlacementType placement, {
+    BuildContext? context,
     String? placementLabel,
     required String eventName,
     VoidCallback? onAdShowed,
+    int? closePassThroughPercent,
   }) async {
+    final showContext = _AdShowContext(context);
     final placementValue = placementLabel ?? placement.name;
     final adConfig = await config;
     final requestPlacement = placement;
@@ -295,19 +313,24 @@ class AdEngine {
 
     return _showSlot(
       slot: slot,
+      showContext: showContext,
       reportPlacement: showPlacement,
       placementLabel: placementLabel,
       eventName: eventName,
       onAdShowed: onAdShowed,
+      closePassThroughPercent: closePassThroughPercent,
     );
   }
 
   Future<bool> showSequence(
     PlacementType placement, {
+    BuildContext? context,
     String? placementLabel,
     required String eventName,
     VoidCallback? onAdShowed,
+    int? closePassThroughPercent,
   }) async {
+    final showContext = _AdShowContext(context);
     final adConfig = await config;
     final showPlacement = _resolveShowPlacement(adConfig, placement);
     final policy = adConfig.getPolicy(showPlacement);
@@ -342,10 +365,12 @@ class AdEngine {
       final refillFuture = preload(showPlacement, eventName: eventName);
       final firstShown = await _showSlot(
         slot: firstSlot,
+        showContext: showContext,
         reportPlacement: showPlacement,
         placementLabel: placementLabel,
         eventName: eventName,
         onAdShowed: onAdShowed,
+        closePassThroughPercent: closePassThroughPercent,
       );
       if (!firstShown) {
         return false;
@@ -362,30 +387,36 @@ class AdEngine {
       }
       await _showSlot(
         slot: refilledSlot,
+        showContext: showContext,
         reportPlacement: showPlacement,
         placementLabel: placementLabel,
         eventName: eventName,
         onAdShowed: onAdShowed,
+        closePassThroughPercent: closePassThroughPercent,
       );
       return true;
     }
 
     final firstShown = await _showSlot(
       slot: firstSlot,
+      showContext: showContext,
       reportPlacement: showPlacement,
       placementLabel: placementLabel,
       eventName: eventName,
       onAdShowed: onAdShowed,
+      closePassThroughPercent: closePassThroughPercent,
     );
     if (!firstShown) {
       return false;
     }
     return _showSlot(
       slot: secondSlot,
+      showContext: showContext,
       reportPlacement: showPlacement,
       placementLabel: placementLabel,
       eventName: eventName,
       onAdShowed: onAdShowed,
+      closePassThroughPercent: closePassThroughPercent,
     );
   }
 
@@ -439,6 +470,7 @@ class AdEngine {
         return config
             .getUnits(placement)
             .where((unit) => unit.isValid && policy.supports(unit.type))
+            .where((unit) => !policy.isFullscreen || unit.type.isDoubleNative)
             .where((unit) => unit.type.isNative)
             .where(
               (unit) => !_nativePool.hasCacheKey(placement, unit.cacheKey),
@@ -507,6 +539,8 @@ class AdEngine {
               timeout: config.loadTimeoutFor(unit),
               reporter: _reporter,
               eventName: eventName,
+              renderAsFullscreen:
+                  kind == _AdLoadKind.fullscreen && unit.type.isNative,
               onLateAdLoaded: (ad, type, adUnitId) => unawaited(
                 _handleLateAd(
                   placement,
@@ -515,6 +549,7 @@ class AdEngine {
                   adUnitId,
                   unit.cacheKey,
                   unit.source,
+                  kind,
                 ),
               ),
             );
@@ -671,7 +706,7 @@ class AdEngine {
       final configuredFirst = configuredSlots.firstOrNull;
       final shouldUseHighValue =
           highValueSlot != null &&
-          (configuredFirst?.loadedType?.isFullscreen ?? true);
+          !(configuredFirst?.loadedType?.isNative ?? false);
       if (shouldUseHighValue) {
         return highValueSlot;
       }
@@ -691,7 +726,8 @@ class AdEngine {
     for (final slot in slots) {
       if (!excludedSlots.contains(slot) &&
           slot.ad != null &&
-          (slot.loadedType?.isFullscreen ?? false)) {
+          ((slot.loadedType?.isFullscreen ?? false) ||
+              (slot.loadedType?.isNative ?? false))) {
         return slot;
       }
     }
@@ -700,10 +736,12 @@ class AdEngine {
 
   Future<bool> _showSlot({
     required PlacementAdSlot slot,
+    required _AdShowContext showContext,
     required PlacementType reportPlacement,
     String? placementLabel,
     required String eventName,
     VoidCallback? onAdShowed,
+    int? closePassThroughPercent,
   }) async {
     final slotPlacement = slot.placement;
     final adConfig = await config;
@@ -730,6 +768,10 @@ class AdEngine {
         _fullscreenPool.removeSlot(slotPlacement, slot);
         unawaited(preload(slotPlacement, eventName: eventName));
       },
+      closePassThroughPercent:
+          (closePassThroughPercent ?? _nativeAdCloseClickPercent).clamp(0, 100),
+      context: showContext.current,
+      style: _fullScreenNativeStyle,
     );
     if (result.shown) {
       _guard.markShowCompleted(slotPlacement, slotPolicy);
@@ -813,11 +855,20 @@ class AdEngine {
     final list = placements.toSet();
 
     for (final p in list) {
+      final policy = c.getPolicy(p);
       final units = c.getUnits(p);
-      if (units.any((unit) => unit.type.isFullscreen)) {
+      if (units.any(
+        (unit) =>
+            unit.type.isFullscreen ||
+            (policy.isFullscreen && unit.type == AdType.native),
+      )) {
         unawaited(preload(p, eventName: eventName));
       }
-      if (units.any((unit) => unit.type.isNative)) {
+      if (units.any(
+        (unit) =>
+            unit.type.isNative &&
+            (!policy.isFullscreen || unit.type.isDoubleNative),
+      )) {
         unawaited(preloadNative(p, eventName: eventName));
       }
     }
@@ -881,6 +932,20 @@ class _AdPoolStore {
 }
 
 enum _AdLoadKind { fullscreen, native }
+
+class _AdShowContext {
+  _AdShowContext(this._context);
+
+  final BuildContext? _context;
+
+  BuildContext? get current {
+    final context = _context;
+    if (context == null || !context.mounted) {
+      return null;
+    }
+    return context;
+  }
+}
 
 class _PolicyOverrideConfigRepository implements AdConfigRepository {
   _PolicyOverrideConfigRepository(

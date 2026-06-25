@@ -1,5 +1,4 @@
-import 'dart:ui';
-
+import 'package:flutter/widgets.dart';
 import 'package:flutter_ad_plugin/src/core/ad_config.dart';
 import 'package:flutter_ad_plugin/src/core/ad_enums.dart';
 import 'package:flutter_ad_plugin/src/core/ad_models.dart';
@@ -27,24 +26,24 @@ class _FakeAdapter implements AdTypeAdapter {
     required Duration timeout,
     required AdEventReporter reporter,
     required String eventName,
+    bool renderAsFullscreen = false,
     void Function(Object ad, AdType type, String adUnitId)? onLateAdLoaded,
   }) async {
-    return AdLoadResult.success(
-      ad: Object(),
-      type: _type,
-      adUnitId: unit.id,
-    );
+    return AdLoadResult.success(ad: Object(), type: _type, adUnitId: unit.id);
   }
 
   @override
   Future<AdShowResult> show({
     required PlacementType placement,
+    BuildContext? context,
     String? placementLabel,
     required String eventName,
     required Object ad,
     required AdEventReporter reporter,
     VoidCallback? onAdShowed,
     VoidCallback? onClosed,
+    int closePassThroughPercent = 0,
+    AdFullScreenNativeStyle style = const AdFullScreenNativeStyle(),
   }) async {
     return AdShowResult.success();
   }
@@ -76,7 +75,10 @@ void main() {
 
     test('retrieves correct adapter among multiple', () {
       final openAdapter = _FakeAdapter(AdSource.admob, AdType.open);
-      final interstitialAdapter = _FakeAdapter(AdSource.admob, AdType.interstitial);
+      final interstitialAdapter = _FakeAdapter(
+        AdSource.admob,
+        AdType.interstitial,
+      );
       final rewardedAdapter = _FakeAdapter(AdSource.admob, AdType.rewarded);
       final nativeAdapter = _FakeAdapter(AdSource.admob, AdType.native);
 
@@ -88,8 +90,14 @@ void main() {
       ]);
 
       expect(registry.get(AdSource.admob, AdType.open), same(openAdapter));
-      expect(registry.get(AdSource.admob, AdType.interstitial), same(interstitialAdapter));
-      expect(registry.get(AdSource.admob, AdType.rewarded), same(rewardedAdapter));
+      expect(
+        registry.get(AdSource.admob, AdType.interstitial),
+        same(interstitialAdapter),
+      );
+      expect(
+        registry.get(AdSource.admob, AdType.rewarded),
+        same(rewardedAdapter),
+      );
       expect(registry.get(AdSource.admob, AdType.native), same(nativeAdapter));
     });
 
@@ -128,10 +136,12 @@ void main() {
 
       expect(
         () => registry.get(AdSource.admob, AdType.open),
-        throwsA(predicate<StateError>((e) {
-          final msg = e.toString();
-          return msg.contains('admob') && msg.contains('open');
-        })),
+        throwsA(
+          predicate<StateError>((e) {
+            final msg = e.toString();
+            return msg.contains('admob') && msg.contains('open');
+          }),
+        ),
       );
     });
   });

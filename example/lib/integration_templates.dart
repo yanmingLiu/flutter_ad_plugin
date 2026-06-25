@@ -14,6 +14,7 @@ class MyConfigRepository extends DefaultAdConfigRepository {
       'common_placements': ['behavior', 'behavior2'],
       'high_value_placement': 'level_h',
       'open': [
+        _fullscreenNativeUnit(ids),
         {'source': 'admob', 'weight': 3, 'type': 'open', 'id': ids.open},
         {
           'source': 'admob',
@@ -28,12 +29,13 @@ class MyConfigRepository extends DefaultAdConfigRepository {
           'weight': 1,
           'type': 'native',
           'id': ids.native,
-          'id2': ids.nativeVideo,
+          'id2': ids.native,
           'template_type': 'medium',
           'refresh_minutes': 20,
         },
       ],
       'message': [
+        _fullscreenNativeUnit(ids),
         {
           'source': 'admob',
           'weight': 2,
@@ -43,6 +45,7 @@ class MyConfigRepository extends DefaultAdConfigRepository {
         },
       ],
       'behavior': [
+        _fullscreenNativeUnit(ids),
         {
           'ad_source': 'admob',
           'ad_weight': 1,
@@ -51,6 +54,7 @@ class MyConfigRepository extends DefaultAdConfigRepository {
         },
       ],
       'behavior2': [
+        _fullscreenNativeUnit(ids),
         {
           'ad_source': 'admob',
           'ad_weight': 1,
@@ -59,6 +63,7 @@ class MyConfigRepository extends DefaultAdConfigRepository {
         },
       ],
       'level_h': [
+        _fullscreenNativeUnit(ids),
         {
           'ad_source': 'admob',
           'ad_weight': 1,
@@ -67,6 +72,7 @@ class MyConfigRepository extends DefaultAdConfigRepository {
         },
       ],
       'play_middle': [
+        _fullscreenNativeUnit(ids),
         {
           'ad_source': 'admob',
           'ad_weight': 2,
@@ -78,13 +84,22 @@ class MyConfigRepository extends DefaultAdConfigRepository {
           'ad_weight': 1,
           'ad_type': 'double_native',
           'ad_id': ids.native,
-          'ad_id2': ids.nativeVideo,
+          'ad_id2': ids.native,
         },
       ],
     };
   }
 
   static String get remoteConfigKey => 'ad_config_json';
+
+  static Map<String, dynamic> _fullscreenNativeUnit(_AdMobTestIds ids) => {
+    'source': 'admob',
+    'weight': 4,
+    'type': 'native',
+    'id': ids.nativeVideo,
+    // native_factory_id 可选：自定义原生广告工厂ID（Android/iOS 需先注册对应 NativeAdFactory）
+    // 'native_factory_id': 'my_custom_factory',
+  };
 }
 
 Map<PlacementType, PlacementPolicy> buildPlacementPolicies() {

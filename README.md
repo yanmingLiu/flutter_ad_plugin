@@ -25,6 +25,7 @@
 - 宿主注入配置：实现 `AdConfigRepository`，可以接接口、Firebase Remote Config、本地缓存或纯本地 Map。
 - 宿主注入埋点：实现 `AdEventReporter`，插件只透传生命周期事件和 `eventName`。
 - 支持开屏、插屏、激励、原生、双原生组合。
+- 支持全屏广告位混入 AdMob 全屏原生广告。
 - 支持同广告位多 ID 缓存、公共兜底位、高价位替换、展示冷却策略。
 - 预置 7 个 AdMob 中介适配器（AppLovin / Meta / Pangle / Liftoff / Mintegral / Unity / InMobi），宿主 App 开箱即用。
 - `preloadPlacements()` 是 fire-and-forget，只负责发起批量预加载，不等待所有广告加载完成。
@@ -61,6 +62,20 @@ await FlutterAdPlugin.init(
   onAdNotReady: (event) {
     // 插件不依赖弹窗库。宿主按自己的 UI 体系弹 toast/snackbar/dialog。
   },
+  // 可选：自定义全屏原生广告样式（关闭按钮、背景色、顶部标签等）
+  fullScreenNativeStyle: AdFullScreenNativeStyle(
+    closeButtonBuilder: (onClose) => GestureDetector(
+      onTap: onClose,
+      child: Container(
+        width: 40, height: 40,
+        decoration: BoxDecoration(
+          color: Colors.red, shape: BoxShape.circle,
+        ),
+        child: Icon(Icons.close, color: Colors.white, size: 24),
+      ),
+    ),
+    closeButtonEdge: EdgeInsets.only(top: 50, right: 18),
+  ),
 );
 
 FlutterAdPlugin.preloadPlacements(
@@ -74,6 +89,7 @@ FlutterAdPlugin.preloadPlacements(
 
 final shown = await FlutterAdPlugin.show(
   const PlacementType('open'),
+  context: context,
   eventName: 'open_cold',
 );
 ```
@@ -125,7 +141,88 @@ if (ads.length >= 2) {
 }
 ```
 
-当前 AdMob 原生广告使用 `NativeTemplateStyle`，默认不要求宿主注册自定义 `NativeAdFactory`。如果宿主要自定义原生 UI，则仍需要在 Android / iOS 宿主工程注册自己的 factory。
+普通 AdMob 原生广告使用 `NativeTemplateStyle`，默认不要求宿主注册自定义 `NativeAdFactory`。
+
+全屏广告位可以混入原生广告候选：
+
+```json
+{
+  "open": [
+    {
+      "source": "admob",
+      "weight": 4,
+      "type": "native",
+      "id": "ca-app-pub-3940256099942544/1044960115"
+    }
+  ]
+}
+```
+
+展示全屏原生广告时需要传入可用的 `BuildContext`，插件会用 Flutter 全屏 dialog 承载 `AdWidget`：
+
+```dart
+await FlutterAdPlugin.show(
+  const PlacementType('open'),
+  context: context,
+  eventName: 'open_cold',
+  closePassThroughPercent: 15,
+);
+```
+
+`closePassThroughPercent` 是全屏原生右上角关闭按钮的首点透传比例。未点击过广告前，命中比例的关闭按钮点击会被忽略并传给底层广告；广告已被点击后，关闭按钮会直接关闭。也可以在 `init(nativeAdCloseClickPercent: ...)` 设置默认值，`show(closePassThroughPercent: ...)` 会覆盖默认值。
+
+全屏原生广告使用自定义 factoryId：`fullScreenNative`。宿主 Android / iOS 工程需要注册对应 `NativeAdFactory`，并按 AdMob 全屏原生要求把 CTA/headline/body/icon 等素材各自放在父容器里，父容器作为 `NativeAdView` 子视图；这样视频素材播放期间素材仍可点击。`example/` 已包含 Android 和 iOS 的参考实现。
+
+可通过 `native_factory_id` 字段在 JSON 中为每个广告单元指定自定义 factory（无需修改插件代码）：
+```json
+{
+  "open": [
+    {
+      "source": "admob", "weight": 4, "type": "native",
+      "id": "ca-app-pub-xxx",
+      "native_factory_id": "my_custom_factory"
+    }
+  ]
+}
+```
+
+### 全屏原生广告样式
+
+通过 `AdFullScreenNativeStyle` 在 `init()` 时全局配置全屏原生广告的 Flutter 遮罩层：
+
+| 属性 | 类型 | 默认值 | 说明 |
+|---|---|---|---|
+| `backgroundColor` | `Color` | `Colors.black` | 遮罩层背景色 |
+| `barrierColor` | `Color` | `Colors.black` | 对话框遮罩色 |
+| `transitionDuration` | `Duration` | `140ms` | 转场动画时长 |
+| `topLabel` | `Widget?` | 默认 "Advertisement" | 顶部标签，`SizedBox.shrink()` 隐藏 |
+| `closeButtonBuilder` | `Widget Function(VoidCallback)?` | 默认黄色 cancel_rounded | 自定义关闭按钮 Widget |
+| `closeButtonPosition` | `AdCloseButtonPosition` | `topRight` | 关闭按钮角位：`topRight` / `topLeft` / `bottomRight` / `bottomLeft` |
+| `closeButtonMargin` | `EdgeInsets?` | 按屏幕百分比自动计算 | 关闭按钮与所选角的边距 |
+
+```dart
+FlutterAdPlugin.init(
+  // ...
+  fullScreenNativeStyle: AdFullScreenNativeStyle(
+    closeButtonPosition: AdCloseButtonPosition.topLeft,
+    closeButtonMargin: EdgeInsets.only(top: 50, left: 18),
+    closeButtonBuilder: (onClose) => GestureDetector(
+      onTap: onClose,
+      child: Container(
+        width: 40, height: 40,
+        decoration: BoxDecoration(
+          color: Colors.red, shape: BoxShape.circle,
+        ),
+        child: Icon(Icons.close, color: Colors.white, size: 24),
+      ),
+    ),
+  ),
+);
+```
+
+`closeButtonPosition` 改变关闭按钮锚定的角位，`closeButtonMargin` 控制距离。不设置 `closeButtonMargin` 时按屏幕百分比自动计算（垂直 `max(56, h*0.06)`，水平 `max(20, w*0.06)`）。
+
+Android 宿主的 `MainActivity` 不要配置 `android:taskAffinity=""`。如果已有这行必须删除，否则广告落地页跳转后后台会多出一个任务/进程，影响广告点击跳转和返回链路。
 
 <a id="architecture"></a>
 ## 整体架构
@@ -371,7 +468,9 @@ FlutterAdPlugin.preloadPlacements(
 
 await FlutterAdPlugin.show(
   const PlacementType('open'),
+  context: context,
   eventName: 'open_cold',
+  closePassThroughPercent: 15,
 );
 ```
 
@@ -389,6 +488,7 @@ _sub = AppStateEventNotifier.appStateStream.listen((state) {
   if (state == AppState.foreground) {
     FlutterAdPlugin.show(
       const PlacementType('open'),
+      context: context,
       eventName: 'open_hot',
     );
   }
@@ -434,7 +534,9 @@ final ads = FlutterAdPlugin.getNativeAds(
 
 ### 8. 原生广告 UI
 
-当前 AdMob 原生广告默认使用 `NativeTemplateStyle`，宿主不必注册自定义 factory。
+当前 AdMob 普通原生广告默认使用 `NativeTemplateStyle`，宿主不必注册自定义 factory。
+
+全屏原生广告需要注册 `fullScreenNative` factory。Android 宿主 Manifest 的 `MainActivity` 不能设置 `android:taskAffinity=""`，否则广告落地页打开后可能在后台残留独立任务/进程，影响广告跳转和返回。
 
 如果宿主要自定义原生 UI，则需要在宿主 Android / iOS 工程注册对应 `NativeAdFactory`，并在适配器中使用匹配的 factoryId。
 
@@ -537,6 +639,7 @@ final ads = FlutterAdPlugin.getNativeAds(
 | `load_timeout` | - | 覆盖当前广告单元加载超时 |
 | `template_type` | - | AdMob native template 类型：`small` / `medium` |
 | `refresh_minutes` | - | 原生广告缓存自动刷新间隔 |
+| `native_factory_id` | - | 自定义原生广告工厂 ID（需先在 Android/iOS 注册对应 NativeAdFactory） |
 
 `id`、`id2`、`id3...`、`ids` 会展开成多个 `AdUnitConfig`。同一个 placement 因此可以缓存多个广告对象，`getNativeAds(..., count: 2)` 会从缓存里取多个原生广告。
 

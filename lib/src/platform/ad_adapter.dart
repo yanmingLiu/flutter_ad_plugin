@@ -1,4 +1,4 @@
-import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart';
 
 import '../core/ad_config.dart';
 import '../core/ad_enums.dart';
@@ -27,6 +27,7 @@ abstract class AdTypeAdapter {
     required Duration timeout,
     required AdEventReporter reporter,
     required String eventName,
+    bool renderAsFullscreen = false,
     void Function(Object ad, AdType type, String adUnitId)? onLateAdLoaded,
   });
 
@@ -34,14 +35,22 @@ abstract class AdTypeAdapter {
   ///
   /// 实现方必须等待用户关闭广告（onDismissed）后才 complete，
   /// 不得在 ad.show() 返回后立即 complete。
+  ///
+  /// [style] controls the overlay appearance for fullscreen native ads.
+  /// Non-native adapters (open/interstitial/rewarded) ignore this parameter.
+  ///
+  /// [style] 控制全屏原生广告的遮罩层样式。非原生适配器忽略此参数。
   Future<AdShowResult> show({
     required PlacementType placement,
+    BuildContext? context,
     String? placementLabel,
     required String eventName,
     required Object ad,
     required AdEventReporter reporter,
     VoidCallback? onAdShowed,
     VoidCallback? onClosed,
+    int closePassThroughPercent = 0,
+    AdFullScreenNativeStyle style = const AdFullScreenNativeStyle(),
   });
 
   void dispose(Object ad);

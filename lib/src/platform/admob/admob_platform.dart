@@ -1,11 +1,13 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
 
 import '../../core/ad_config.dart';
 import '../../core/ad_enums.dart';
 import '../../core/ad_models.dart';
+import '../../ui/fullscreen_native_ad_view.dart';
 import '../../utils/ad_logger.dart';
 import '../../utils/ad_reporter.dart';
 import '../ad_adapter.dart';
@@ -88,6 +90,7 @@ abstract class _AdmobFullscreenAdapter<TAd extends AdWithoutView>
     required Duration timeout,
     required AdEventReporter reporter,
     required String eventName,
+    bool renderAsFullscreen = false,
     void Function(Object ad, AdType type, String adUnitId)? onLateAdLoaded,
   }) async {
     final completer = Completer<AdLoadResult<Object>>();
@@ -156,12 +159,15 @@ abstract class _AdmobFullscreenAdapter<TAd extends AdWithoutView>
   @override
   Future<AdShowResult> show({
     required PlacementType placement,
+    BuildContext? context,
     String? placementLabel,
     required String eventName,
     required Object ad,
     required AdEventReporter reporter,
     VoidCallback? onAdShowed,
     VoidCallback? onClosed,
+    int closePassThroughPercent = 0,
+    AdFullScreenNativeStyle style = const AdFullScreenNativeStyle(),
   }) async {
     final fullscreenAd = ad as TAd;
     final completer = Completer<AdShowResult>();
@@ -405,12 +411,39 @@ class AdmobRewardedAdapter extends _AdmobFullscreenAdapter<RewardedAd> {
 
 /// AdMob 原生广告适配器
 class AdmobNativeAdapter implements AdTypeAdapter {
+  /// The factory ID for inline native ads using the home list-tile layout.
+  ///
+  /// @Deprecated: Use `native_factory_id` in your JSON ad-unit config instead.
+  /// Migrate by adding `"native_factory_id": "homeListTile"` to the relevant
+  /// ad unit in your config JSON, then register a matching `NativeAdFactory`
+  /// on the native side.
+  ///
+  /// 已弃用：请在 JSON 配置中使用 `native_factory_id` 字段替代。
+  @Deprecated('Use native_factory_id in AdUnitConfig instead.')
+  static const String homeFactoryId = 'homeListTile';
+
+  /// The factory ID for fullscreen native ads.
+  ///
+  /// @Deprecated: Use `native_factory_id` in your JSON ad-unit config instead.
+  /// Migrate by adding `"native_factory_id": "fullScreenNative"` to the relevant
+  /// ad unit in your config JSON, then register a matching `NativeAdFactory`
+  /// on the native side.
+  ///
+  /// 已弃用：请在 JSON 配置中使用 `native_factory_id` 字段替代。
+  @Deprecated('Use native_factory_id in AdUnitConfig instead.')
+  static const String fullScreenFactoryId = 'fullScreenNative';
+  static const String _androidNativeVideoTestAdUnitId =
+      'ca-app-pub-3940256099942544/1044960115';
+  static const String _androidNativeAdvancedTestAdUnitId =
+      'ca-app-pub-3940256099942544/2247696110';
+
   @override
   AdSource get source => AdSource.admob;
   @override
   AdType get type => AdType.native;
 
   static final Map<NativeAd, NativeAdAttribution> _attributions = {};
+  static final Map<NativeAd, _NativeAdState> _states = {};
 
   static void updateAttribution({
     required Object ad,
@@ -436,6 +469,28 @@ class AdmobNativeAdapter implements AdTypeAdapter {
       ..eventName = eventName;
   }
 
+  static bool hasClicked(Object ad) {
+    return ad is NativeAd && (_states[ad]?.clicked ?? false);
+  }
+
+  static void addClickListener(Object ad, VoidCallback listener) {
+    if (ad is! NativeAd) {
+      return;
+    }
+    _states.putIfAbsent(ad, _NativeAdState.new).clickListeners.add(listener);
+  }
+
+  static void removeClickListener(Object ad, VoidCallback listener) {
+    if (ad is! NativeAd) {
+      return;
+    }
+    final state = _states[ad];
+    if (state == null) {
+      return;
+    }
+    state.clickListeners.remove(listener);
+  }
+
   @override
   Future<AdLoadResult<Object>> load({
     required PlacementType placement,
@@ -443,6 +498,7 @@ class AdmobNativeAdapter implements AdTypeAdapter {
     required Duration timeout,
     required AdEventReporter reporter,
     required String eventName,
+    bool renderAsFullscreen = false,
     void Function(Object ad, AdType type, String adUnitId)? onLateAdLoaded,
   }) async {
     final completer = Completer<AdLoadResult<Object>>();
@@ -463,102 +519,285 @@ class AdmobNativeAdapter implements AdTypeAdapter {
       }
     });
 
+    final isFullscreenNative = renderAsFullscreen;
     final templateType = unit.templateType?.toLowerCase() == 'small'
         ? TemplateType.small
         : TemplateType.medium;
 
-    final ad = NativeAd(
-      adUnitId: unit.id,
-      nativeTemplateStyle: NativeTemplateStyle(templateType: templateType),
-      request: const AdRequest(),
-      listener: NativeAdListener(
-        onAdLoaded: (ad) {
-          final nativeAd = ad as NativeAd;
-          _attributions[nativeAd] = NativeAdAttribution(
-            placement: placement,
-            eventName: eventName,
-          );
-          if (!completer.isCompleted) {
-            completer.complete(
-              AdLoadResult.success(ad: nativeAd, type: type, adUnitId: unit.id),
+    void startLoad({
+      required String adUnitId,
+      required bool allowAndroidTestFallback,
+    }) {
+      final ad = NativeAd(
+        adUnitId: adUnitId,
+        factoryId: isFullscreenNative
+            // ignore: deprecated_member_use_from_same_package
+            ? (unit.nativeFactoryId ?? fullScreenFactoryId)
+            : unit.nativeFactoryId,
+        nativeAdOptions: isFullscreenNative
+            ? NativeAdOptions(
+                adChoicesPlacement: AdChoicesPlacement.topLeftCorner,
+              )
+            : null,
+        nativeTemplateStyle:
+            isFullscreenNative || unit.nativeFactoryId != null
+                ? null
+                : NativeTemplateStyle(templateType: templateType),
+        request: const AdRequest(),
+        listener: NativeAdListener(
+          onAdLoaded: (ad) {
+            final nativeAd = ad as NativeAd;
+            _attributions[nativeAd] = NativeAdAttribution(
+              placement: placement,
+              eventName: eventName,
             );
-          } else {
-            if (onLateAdLoaded != null) {
-              onLateAdLoaded(nativeAd, type, unit.id);
+            _states.putIfAbsent(nativeAd, _NativeAdState.new);
+            if (!completer.isCompleted) {
+              completer.complete(
+                AdLoadResult.success(
+                  ad: nativeAd,
+                  type: type,
+                  adUnitId: adUnitId,
+                ),
+              );
             } else {
-              nativeAd.dispose();
+              if (onLateAdLoaded != null) {
+                onLateAdLoaded(nativeAd, type, adUnitId);
+              } else {
+                nativeAd.dispose();
+              }
             }
-          }
-        },
-        onAdFailedToLoad: (ad, error) {
-          log.v(
-            '❌ [adapter_load] failed: source=${source.name} type=${type.name} '
-            'placement=${placement.name} id=${unit.id} code=${error.code} '
-            'message=${error.message}',
-          );
-          ad.dispose();
-          if (!completer.isCompleted) {
-            completer.complete(
-              AdLoadResult.failure(type: type, adUnitId: unit.id, error: error),
+          },
+          onAdFailedToLoad: (ad, error) {
+            log.v(
+              '❌ [adapter_load] failed: source=${source.name} type=${type.name} '
+              'placement=${placement.name} id=$adUnitId code=${error.code} '
+              'message=${error.message}',
             );
-          }
-        },
-        onAdClicked: (ad) {
-          final attribution = _attributions[ad];
-          final reportPlacement = attribution?.placement ?? placement;
-          _reportLifecycleEvent(
-            reporter,
-            AdEvent(
-              eventType: AdEventType.clicked,
+            if (ad is NativeAd) {
+              _attributions.remove(ad);
+              _states.remove(ad);
+            }
+            ad.dispose();
+            if (_shouldRetryAndroidNativeTestFallback(
+              adUnitId: adUnitId,
+              error: error,
+              isFullscreenNative: isFullscreenNative,
+              allowFallback: allowAndroidTestFallback,
+            )) {
+              log.v(
+                '[adapter_load] retry_android_test_fallback: '
+                'placement=${placement.name} from=$adUnitId '
+                'to=$_androidNativeAdvancedTestAdUnitId',
+              );
+              startLoad(
+                adUnitId: _androidNativeAdvancedTestAdUnitId,
+                allowAndroidTestFallback: false,
+              );
+              return;
+            }
+            if (!completer.isCompleted) {
+              completer.complete(
+                AdLoadResult.failure(
+                  type: type,
+                  adUnitId: adUnitId,
+                  error: error,
+                ),
+              );
+            }
+          },
+          onAdClicked: (ad) {
+            final attribution = _attributions[ad];
+            final reportPlacement = attribution?.placement ?? placement;
+            final nativeAd = ad as NativeAd;
+            final state = _states.putIfAbsent(nativeAd, _NativeAdState.new)
+              ..clicked = true;
+            _reportLifecycleEvent(
+              reporter,
+              AdEvent(
+                eventType: AdEventType.clicked,
+                placement: reportPlacement,
+                placementLabel: attribution?.placementLabel,
+                adType: type,
+                source: source,
+                adUnitId: adUnitId,
+                timestamp: DateTime.now(),
+                eventName: attribution?.eventName ?? eventName,
+                network:
+                    ad.responseInfo?.loadedAdapterResponseInfo?.adSourceName,
+              ),
+            );
+            for (final listener in List<VoidCallback>.of(
+              state.clickListeners,
+            )) {
+              listener();
+            }
+          },
+          onAdImpression: (ad) {
+            final nativeAd = ad as NativeAd;
+            final state = _states.putIfAbsent(nativeAd, _NativeAdState.new);
+            final attribution = _attributions[nativeAd];
+            if (state.impressionReported) {
+              return;
+            }
+            state.impressionReported = true;
+            state.onAdShowed?.call();
+            if (state.reportShowSuccessOnImpression) {
+              _reportLifecycleEvent(
+                reporter,
+                AdEvent(
+                  eventType: AdEventType.showSuccess,
+                  placement: attribution?.placement ?? placement,
+                  placementLabel: attribution?.placementLabel,
+                  adType: type,
+                  source: source,
+                  adUnitId: adUnitId,
+                  timestamp: DateTime.now(),
+                  eventName: attribution?.eventName ?? eventName,
+                  network:
+                      ad.responseInfo?.loadedAdapterResponseInfo?.adSourceName,
+                ),
+              );
+            }
+          },
+          onPaidEvent: (ad, valueMicros, precision, currencyCode) {
+            final attribution = _attributions[ad];
+            final reportPlacement = attribution?.placement ?? placement;
+            _reportPaidEvent(
+              reporter: reporter,
               placement: reportPlacement,
               placementLabel: attribution?.placementLabel,
+              eventName: attribution?.eventName ?? eventName,
               adType: type,
               source: source,
-              adUnitId: unit.id,
-              timestamp: DateTime.now(),
-              eventName: attribution?.eventName ?? eventName,
+              adUnitId: adUnitId,
+              valueMicros: valueMicros,
+              currencyCode: currencyCode,
               network: ad.responseInfo?.loadedAdapterResponseInfo?.adSourceName,
-            ),
-          );
-        },
-        onPaidEvent: (ad, valueMicros, precision, currencyCode) {
-          final attribution = _attributions[ad];
-          final reportPlacement = attribution?.placement ?? placement;
-          _reportPaidEvent(
-            reporter: reporter,
-            placement: reportPlacement,
-            placementLabel: attribution?.placementLabel,
-            eventName: attribution?.eventName ?? eventName,
-            adType: type,
-            source: source,
-            adUnitId: unit.id,
-            valueMicros: valueMicros,
-            currencyCode: currencyCode,
-            network: ad.responseInfo?.loadedAdapterResponseInfo?.adSourceName,
-          );
-        },
-      ),
-    );
-    await ad.load();
+            );
+          },
+        ),
+      );
+      unawaited(ad.load());
+    }
+
+    startLoad(adUnitId: unit.id, allowAndroidTestFallback: true);
     return completer.future.whenComplete(timer.cancel);
   }
 
   @override
   Future<AdShowResult> show({
     required PlacementType placement,
+    BuildContext? context,
     String? placementLabel,
     required String eventName,
     required Object ad,
     required AdEventReporter reporter,
     VoidCallback? onAdShowed,
     VoidCallback? onClosed,
-  }) async => AdShowResult.success();
+    int closePassThroughPercent = 0,
+    AdFullScreenNativeStyle style = const AdFullScreenNativeStyle(),
+  }) async {
+    if (ad is! NativeAd) {
+      _reportLifecycleEvent(
+        reporter,
+        AdEvent(
+          eventType: AdEventType.showFail,
+          placement: placement,
+          placementLabel: placementLabel,
+          adType: type,
+          source: source,
+          errorReason: 'invalid_native_ad',
+          timestamp: DateTime.now(),
+          eventName: eventName,
+        ),
+      );
+      return AdShowResult.failure('invalid_native_ad');
+    }
+    updateAttribution(
+      ad: ad,
+      placement: placement,
+      placementLabel: placementLabel,
+      eventName: eventName,
+    );
+    final state = _states.putIfAbsent(ad, _NativeAdState.new)
+      ..onAdShowed = onAdShowed
+      ..reportShowSuccessOnImpression = true;
+
+    final result = await FullScreenNativeAdView.show(
+      context: context,
+      ad: ad,
+      closePassThroughPercent: closePassThroughPercent,
+      hasClicked: () => state.clicked,
+      addClickListener: (listener) => addClickListener(ad, listener),
+      removeClickListener: (listener) => removeClickListener(ad, listener),
+      style: style,
+      onClosed: () {
+        onClosed?.call();
+        _reportLifecycleEvent(
+          reporter,
+          AdEvent(
+            eventType: AdEventType.close,
+            placement: placement,
+            placementLabel: placementLabel,
+            adType: type,
+            source: source,
+            adUnitId: ad.adUnitId,
+            timestamp: DateTime.now(),
+            eventName: eventName,
+            network: ad.responseInfo?.loadedAdapterResponseInfo?.adSourceName,
+          ),
+        );
+      },
+    );
+    if (!result.shown) {
+      _reportLifecycleEvent(
+        reporter,
+        AdEvent(
+          eventType: AdEventType.showFail,
+          placement: placement,
+          placementLabel: placementLabel,
+          adType: type,
+          source: source,
+          adUnitId: ad.adUnitId,
+          errorReason: result.error?.toString(),
+          timestamp: DateTime.now(),
+          eventName: eventName,
+          network: ad.responseInfo?.loadedAdapterResponseInfo?.adSourceName,
+        ),
+      );
+    }
+    return result;
+  }
 
   @override
   void dispose(Object ad) {
     if (ad is NativeAd) {
       _attributions.remove(ad);
+      _states.remove(ad);
       ad.dispose();
     }
   }
+
+  bool _shouldRetryAndroidNativeTestFallback({
+    required String adUnitId,
+    required LoadAdError error,
+    required bool isFullscreenNative,
+    required bool allowFallback,
+  }) {
+    return allowFallback &&
+        kDebugMode &&
+        defaultTargetPlatform == TargetPlatform.android &&
+        isFullscreenNative &&
+        adUnitId == _androidNativeVideoTestAdUnitId &&
+        error.code == 3;
+  }
+}
+
+class _NativeAdState {
+  bool clicked = false;
+  bool impressionReported = false;
+  bool reportShowSuccessOnImpression = false;
+  VoidCallback? onAdShowed;
+  final Set<VoidCallback> clickListeners = <VoidCallback>{};
 }

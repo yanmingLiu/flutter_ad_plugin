@@ -34,17 +34,29 @@ class FlutterAdPlugin {
   }
 
   /// 初始化广告引擎，必须在使用其他方法前调用。
+  ///
+  /// [fullScreenNativeStyle] configures the overlay appearance for fullscreen
+  /// native ads (background color, close button widget and position, top label).
+  /// Defaults to the built-in style with a yellow close button on black background.
+  ///
+  /// [fullScreenNativeStyle] 配置全屏原生广告遮罩层样式（背景色、关闭按钮外观
+  /// 和位置、顶部标签）。默认使用内置样式（黑色背景 + 黄色关闭按钮）。
   static Future<void> init({
     required AdConfigRepository configRepository,
     required AdEventReporter eventReporter,
     Map<PlacementType, PlacementPolicy> placementPolicies = const {},
     AdNotReadyCallback? onAdNotReady,
+    int nativeAdCloseClickPercent = 0,
+    AdFullScreenNativeStyle fullScreenNativeStyle =
+        const AdFullScreenNativeStyle(),
   }) {
     return AdEngine.instance.initWith(
       configRepository: configRepository,
       eventReporter: eventReporter,
       placementPolicies: placementPolicies,
       onAdNotReady: onAdNotReady,
+      nativeAdCloseClickPercent: nativeAdCloseClickPercent,
+      fullScreenNativeStyle: fullScreenNativeStyle,
     );
   }
 
@@ -80,26 +92,34 @@ class FlutterAdPlugin {
   /// 全屏类型（通过 id/id2 展开），连续调用两次 show() 可逐个弹出。
   static Future<bool> show(
     PlacementType placement, {
+    BuildContext? context,
     String? placementLabel,
     required String eventName,
+    int? closePassThroughPercent,
   }) {
     return AdEngine.instance.show(
       placement,
+      context: context,
       placementLabel: placementLabel,
       eventName: eventName,
+      closePassThroughPercent: closePassThroughPercent,
     );
   }
 
   /// 按缓存情况连续展示同一广告位下的两个全屏广告。
   static Future<bool> showSequence(
     PlacementType placement, {
+    BuildContext? context,
     String? placementLabel,
     required String eventName,
+    int? closePassThroughPercent,
   }) {
     return AdEngine.instance.showSequence(
       placement,
+      context: context,
       placementLabel: placementLabel,
       eventName: eventName,
+      closePassThroughPercent: closePassThroughPercent,
     );
   }
 

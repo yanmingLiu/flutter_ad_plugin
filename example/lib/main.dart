@@ -26,6 +26,12 @@ Future<void> main() async {
     configRepository: MyConfigRepository(),
     eventReporter: MyAdEventReporter(),
     placementPolicies: buildPlacementPolicies(),
+    nativeAdCloseClickPercent: 15,
+    // 全屏原生广告样式示例：自定义关闭按钮位置
+    fullScreenNativeStyle: const AdFullScreenNativeStyle(
+      closeButtonPosition: AdCloseButtonPosition.topRight,
+      closeButtonMargin: EdgeInsets.only(top: 50, right: 18),
+    ),
   );
 
   FlutterAdPlugin.verboseLogging = true;
@@ -84,7 +90,12 @@ class _LaunchGatePageState extends State<LaunchGatePage> {
     );
 
     // 冷启动开屏广告
-    await FlutterAdPlugin.show(openPlacement, eventName: 'open_cold');
+    await FlutterAdPlugin.show(
+      openPlacement,
+      context: context,
+      eventName: 'open_cold',
+      closePassThroughPercent: 15,
+    );
 
     if (!mounted) return;
     Navigator.of(context).pushReplacement(
@@ -157,7 +168,12 @@ class _AdDemoHomePageState extends State<AdDemoHomePage> {
   Future<void> _showFullscreen(PlacementType placement) async {
     final eventName = placement == openPlacement ? 'open_hot' : placement.name;
     setState(() => _status = 'Showing ${placement.name}...');
-    final shown = await FlutterAdPlugin.show(placement, eventName: eventName);
+    final shown = await FlutterAdPlugin.show(
+      placement,
+      context: context,
+      eventName: eventName,
+      closePassThroughPercent: 15,
+    );
     setState(() => _status = shown ? 'Ad closed' : 'No ad was shown');
   }
 
