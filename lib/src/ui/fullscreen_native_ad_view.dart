@@ -76,7 +76,11 @@ class FullScreenNativeAdView extends StatefulWidget {
       onClosed();
       return AdShowResult.success();
     }
-    return AdShowResult.failure('dismissed_without_result');
+    // Ad was shown (showSuccess already reported), but dismissed without
+    // the close button (e.g. system gesture on some platforms).
+    // Always report close to keep the event chain consistent.
+    onClosed();
+    return AdShowResult.success();
   }
 
   static BuildContext? _rootContext() {

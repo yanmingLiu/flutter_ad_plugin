@@ -8,6 +8,8 @@ import 'utils/ad_lifecycle.dart';
 
 const openPlacement = PlacementType('open');
 const homePlacement = PlacementType('home');
+const bannerPlacement = PlacementType('bottom_banner');
+const inlineBannerPlacement = PlacementType('article_inline_banner');
 const messagePlacement = PlacementType('message');
 const playMiddlePlacement = PlacementType('play_middle');
 const levelHPlacement = PlacementType('level_h');
@@ -16,6 +18,7 @@ const coldStartBackgroundPreloadPlacements = [
   messagePlacement,
   playMiddlePlacement,
   levelHPlacement,
+  bannerPlacement,
 ];
 
 Future<void> main() async {
@@ -119,6 +122,7 @@ class AdDemoHomePage extends StatefulWidget {
 class _AdDemoHomePageState extends State<AdDemoHomePage> {
   Object? _nativeAd;
   List<Object> _nativeAds = const [];
+  Object? _bannerAd;
   String _status = 'Ready';
   late final AdLifecycle _lifecycle;
 
@@ -126,6 +130,7 @@ class _AdDemoHomePageState extends State<AdDemoHomePage> {
   void initState() {
     super.initState();
     _initNativeAd();
+    _initBannerAd();
 
     _lifecycle = AdLifecycle(
       onForeground: () {
@@ -162,6 +167,20 @@ class _AdDemoHomePageState extends State<AdDemoHomePage> {
         _nativeAds = ads;
         _status = ad == null ? 'Native ad load failed' : 'Native ad ready';
       });
+    }
+  }
+
+  Future<void> _initBannerAd() async {
+    var ad = FlutterAdPlugin.getBannerAd(bannerPlacement);
+    if (ad == null) {
+      await FlutterAdPlugin.loadBanner(
+        bannerPlacement,
+        eventName: 'first_load',
+      );
+      ad = FlutterAdPlugin.getBannerAd(bannerPlacement);
+    }
+    if (mounted && ad != null) {
+      setState(() => _bannerAd = ad);
     }
   }
 
@@ -231,7 +250,25 @@ class _AdDemoHomePageState extends State<AdDemoHomePage> {
                   icon: const Icon(Icons.refresh),
                   label: const Text('Reload Native'),
                 ),
-              ],
+                OutlinedButton.icon(
+                  onPressed: () => Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => const InlineBannerDemoPage(
+                        placement: inlineBannerPlacement,
+                      ),
+                    ),
+                  ),
+                  icon: const Icon(Icons.view_agenda),
+                  label: const Text('Inline Banner'),
+                ),
+          const SizedBox(height: 32),
+          Text(
+            '← Press back to trigger disposeBannerAd()',
+            style: textTheme.labelMedium!.copyWith(
+              color: Theme.of(context).colorScheme.outline,
+            ),
+          ),
+        ],
             ),
             const SizedBox(height: 12),
             Text('Status: $_status', style: textTheme.labelLarge),
@@ -250,6 +287,20 @@ class _AdDemoHomePageState extends State<AdDemoHomePage> {
                 borderRadius: BorderRadius.circular(8),
                 child: NativeAdView(ad: _nativeAd!, height: 280),
               ),
+            const SizedBox(height: 16),
+            // 模式 1：全局 Banner — 自动预加载 + 自动刷新 + 跨页面持久
+            if (_bannerAd != null) ...[
+              Text('Global Banner (mode: global)', style: textTheme.titleMedium),
+              const SizedBox(height: 4),
+              Text(
+                'Auto-preloaded by preloadPlacements, auto-refreshes per '
+                'refresh_minutes, and persists across page navigation.',
+                style: textTheme.bodySmall!
+                    .copyWith(color: Theme.of(context).colorScheme.outline),
+              ),
+              const SizedBox(height: 8),
+              Center(child: FlutterAdPlugin.bannerAdWidget(ad: _bannerAd!)),
+            ],
           ],
         ),
       ),
@@ -270,6 +321,128 @@ class _EmptyNativeAd extends StatelessWidget {
         borderRadius: BorderRadius.circular(8),
       ),
       child: const Text('Native ad cache is empty'),
+    );
+  }
+}
+
+/// Demo page for an inline banner ad.
+///
+/// Loads the banner on mount and disposes it on unmount, illustrating
+/// the manual lifecycle pattern for `banner_mode: "inline"`.
+///
+/// 内联 Banner 演示页面。挂载时加载、卸载时销毁，演示手动生命周期模式。
+class InlineBannerDemoPage extends StatefulWidget {
+  const InlineBannerDemoPage({super.key, required this.placement});
+  final PlacementType placement;
+
+  @override
+  State<InlineBannerDemoPage> createState() => _InlineBannerDemoPageState();
+}
+
+class _InlineBannerDemoPageState extends State<InlineBannerDemoPage> {
+  List<Object> _ads = const [];
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  @override
+  void dispose() {
+    FlutterAdPlugin.disposeBannerAd(widget.placement);
+    super.dispose();
+  }
+
+  Future<void> _load() async {
+    await FlutterAdPlugin.loadBanner(widget.placement, eventName: 'article');
+    if (!mounted) return;
+    setState(() {
+      _ads = FlutterAdPlugin.getBannerAds(
+        widget.placement,
+        count: 2,
+        eventName: 'article',
+      );
+      _loading = false;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final textTheme = Theme.of(context).textTheme;
+
+    return Scaffold(
+      appBar: AppBar(title: Text('Inline Banner: ${widget.placement.name}')),
+      body: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          Text('Inline Banner Demo (mode: inline)', style: textTheme.headlineSmall),
+          const SizedBox(height: 8),
+          Text(
+            'This banner is manually loaded on mount (initState) and '
+            'disposed on unmount (dispose). It uses banner_mode: "inline" '
+            'in the JSON config.\n\n'
+            'Unlike the global banner, this one is NOT auto-preloaded '
+            'and does NOT auto-refresh.',
+            style: textTheme.bodyMedium,
+          ),
+          const SizedBox(height: 16),
+          Text('Lifecycle', style: textTheme.titleMedium),
+          const SizedBox(height: 4),
+          Text(
+            'initState → loadBanner() → display AdWidget\n'
+            'dispose  → disposeBannerAd()',
+            style: textTheme.bodySmall!.copyWith(
+              fontFamily: 'monospace',
+              color: Theme.of(context).colorScheme.primary,
+            ),
+          ),
+          const SizedBox(height: 16),
+          if (_loading)
+            const Center(child: CircularProgressIndicator())
+          else if (_ads.isEmpty)
+            Container(
+              height: 60,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                border: Border.all(
+                  color: Theme.of(context).colorScheme.outlineVariant,
+                ),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Text('Banner load failed'),
+            )
+          else ...[
+            Text(
+              'Cache: ${_ads.length} banner(s) loaded',
+              style: textTheme.bodySmall!.copyWith(
+                color: Theme.of(context).colorScheme.primary,
+              ),
+            ),
+            const SizedBox(height: 12),
+            for (var i = 0; i < _ads.length; i++)
+              Container(
+                margin: const EdgeInsets.only(bottom: 12),
+                padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+                decoration: BoxDecoration(
+                  border: Border.all(
+                    color: Theme.of(context).colorScheme.outlineVariant,
+                  ),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Banner #${i + 1}', style: textTheme.labelMedium),
+                    const SizedBox(height: 4),
+                    Center(child: FlutterAdPlugin.bannerAdWidget(ad: _ads[i])),
+                  ],
+                ),
+              ),
+          ],
+        ],
+      ),
     );
   }
 }

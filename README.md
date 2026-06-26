@@ -109,6 +109,10 @@ final shown = await FlutterAdPlugin.show(
 | `loadNative()` | 预加载原生广告 | 等待本次加载链路结束 |
 | `getNativeAd()` | 取单个原生缓存并更新展示归因 | 同步返回 |
 | `getNativeAds()` | 取多个原生缓存，用于双原生 | 同步返回 |
+| `loadBanner()` | 预加载 Banner 广告 | 等待本次加载链路结束 |
+| `getBannerAd()` | 取缓存 Banner 广告 | 同步返回 |
+| `disposeBannerAd()` | 销毁指定广告位的 Banner 缓存 | 同步返回 |
+| `bannerAdWidget()` | 渲染 Banner 广告 Widget | 同步返回 |
 
 ### 原生广告
 
@@ -126,6 +130,85 @@ if (ad != null) {
   NativeAdView(ad: ad, height: 280);
 }
 ```
+
+### Banner 广告
+
+Banner 支持两种生命周期模式：
+
+| 模�� | JSON 配置 | 行为 |
+|---|---|---|
+| `global`（默认） | `"banner_mode": "global"` | `preloadPlacements()` 自动预加载，按 `refresh_minutes` 自动刷新，跨页面持久 |
+| `inline` | `"banner_mode": "inline"` | 手动 `loadBanner()` / `disposeBannerAd()` 控制，页面退出时需主动销毁 |
+
+**全局 Banner**（底部/顶部持久化）
+
+```dart
+const bannerPlacement = PlacementType('bottom_banner');
+
+// 已在 preloadPlacements 中自动预加载，直接取用
+final ad = FlutterAdPlugin.getBannerAd(bannerPlacement);
+if (ad != null) {
+  FlutterAdPlugin.bannerAdWidget(ad: ad);
+}
+```
+
+**内联 Banner**（嵌入页面内容，手动生命周期）
+
+```dart
+class MyPage extends StatefulWidget { ... }
+
+class _MyPageState extends State<MyPage> {
+  Object? _ad;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    await FlutterAdPlugin.loadBanner(
+      const PlacementType('article_banner'),
+      eventName: 'article',
+    );
+    if (mounted) setState(() {
+      _ad = FlutterAdPlugin.getBannerAd(PlacementType('article_banner'));
+    });
+  }
+
+  @override
+  void dispose() {
+    FlutterAdPlugin.disposeBannerAd(PlacementType('article_banner'));
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_ad == null) return const SizedBox.shrink();
+    return FlutterAdPlugin.bannerAdWidget(ad: _ad!);
+  }
+}
+```
+
+JSON 配置示例（新字段 `banner_size`）：
+
+```json
+{
+  "bottom_banner": [
+    {
+      "source": "admob",
+      "weight": 1,
+      "type": "banner",
+      "id": "ca-app-pub-3940256099942544/6300978111",
+      "banner_size": "banner"
+    }
+  ]
+}
+```
+
+支持的 `banner_size` 值：`banner`（320x50，默认）、`large_banner`（320x100）、`medium_rectangle`（300x250）、`leaderboard`（728x90）。
+
+Banner 与原生广告同属非全屏类型，由 `preloadPlacements()` 自动预加载。
 
 双原生：
 
@@ -289,6 +372,7 @@ Core 包含三类对象：
 - `AdmobInterstitialAdapter`
 - `AdmobRewardedAdapter`
 - `AdmobNativeAdapter`
+- `AdmobBannerAdapter`
 
 后续接 MAX / TopOn 时，新增 adapter 并注册到 `AdAdapterRegistry` 即可。
 
@@ -630,7 +714,7 @@ final ads = FlutterAdPlugin.getNativeAds(
 | 字段 | 别名 | 说明 |
 |---|---|---|
 | `source` | `ad_source` | 广告源，当前实现 `admob` |
-| `type` | `ad_type` | 广告类型：`open` / `interstitial` / `rewarded` / `native` / `double_native` |
+| `type` | `ad_type` | 广告类型：`open` / `interstitial` / `rewarded` / `native` / `double_native` / `banner` |
 | `weight` | `ad_weight` | 权重，数值越大越优先尝试 |
 | `id` | `ad_id` | 广告单元 ID |
 | `id2` | `ad_id2` | 第二个广告单元 ID |
@@ -640,6 +724,8 @@ final ads = FlutterAdPlugin.getNativeAds(
 | `template_type` | - | AdMob native template 类型：`small` / `medium` |
 | `refresh_minutes` | - | 原生广告缓存自动刷新间隔 |
 | `native_factory_id` | - | 自定义原生广告工厂 ID（需先在 Android/iOS 注册对应 NativeAdFactory） |
+| `banner_size` | - | Banner 尺寸：`banner` / `large_banner` / `medium_rectangle` / `leaderboard` |
+| `banner_mode` | - | Banner 生命周期：`global`（默认，自动刷新持久化）/ `inline`（手动控制） |
 
 `id`、`id2`、`id3...`、`ids` 会展开成多个 `AdUnitConfig`。同一个 placement 因此可以缓存多个广告对象，`getNativeAds(..., count: 2)` 会从缓存里取多个原生广告。
 

@@ -393,6 +393,37 @@ class AdUnitConfig {
   /// 或 AdMob 内置模板。宿主需在 Android/iOS 原生侧注册同名 `NativeAdFactory`。
   final String? nativeFactoryId;
 
+  /// Banner ad size preset (JSON key: `banner_size`).
+  ///
+  /// Supported values: `"banner"` (320x50, default), `"large_banner"` (320x100),
+  /// `"medium_rectangle"` (300x250), `"leaderboard"` (728x90).
+  /// Only applicable when [type] is [AdType.banner].
+  ///
+  /// Banner 广告尺寸预设（JSON key: `banner_size`）。
+  /// 可选值：`banner` / `large_banner` / `medium_rectangle` / `leaderboard`。
+  /// 仅在 [type] 为 [AdType.banner] 时生效。
+  final String? bannerSize;
+
+  /// Banner lifecycle mode (JSON key: `banner_mode`).
+  ///
+  /// - `"global"` (default): auto-preloaded by `preloadPlacements()`, auto-refreshed
+  ///   per `refresh_minutes`. Persists across page navigation. Retrieve with
+  ///   `getBannerAd()` at any time.
+  /// - `"inline"`: manually controlled via `loadBanner()` / `disposeBannerAd()`.
+  ///   NOT auto-preloaded. Dispose explicitly when the page/widget is removed.
+  ///
+  /// Banner 生命周期模式（JSON key: `banner_mode`）。
+  /// - `global`（默认）：由 preloadPlacements 自动预加载，按 refresh_minutes 自动刷新，
+  ///   跨页面持久。随时通过 getBannerAd 取用。
+  /// - `inline`：手动调用 loadBanner / disposeBannerAd 控制。不自动预加载，
+  ///   页面退出时需主动销毁。
+  final String? bannerMode;
+
+  /// Whether this banner unit is in global (persistent) mode.
+  ///
+  /// 是否是全局持久模式。
+  bool get isGlobalBanner => bannerMode?.trim().toLowerCase() != 'inline';
+
   const AdUnitConfig({
     required this.source,
     required this.weight,
@@ -404,6 +435,8 @@ class AdUnitConfig {
     this.loadTimeoutSeconds,
     this.poolSize = 1,
     this.nativeFactoryId,
+    this.bannerSize,
+    this.bannerMode,
   }) : cacheKey = cacheKey ?? id;
 
   bool get isValid => id.isNotEmpty;
@@ -518,7 +551,7 @@ class PlacementPolicy {
   /// Whether [type] is allowed to be shown in this placement.
   /// When [allowedTypes] is set, only those types pass.
   /// Otherwise, fullscreen placements accept fullscreen + native types;
-  /// non-fullscreen placements accept native types only.
+  /// non-fullscreen placements accept native and banner types.
   ///
   /// 指定广告类型是否可在此 placement 中展示。
   bool supports(AdType type) {
@@ -528,7 +561,7 @@ class PlacementPolicy {
     if (isFullscreen) {
       return type.isFullscreen || type.isNative;
     } else {
-      return type.isNative;
+      return type.isNative || type.isBanner;
     }
   }
 }
@@ -641,6 +674,8 @@ class AdConfigParser {
         loadTimeoutSeconds: (json['load_timeout'] as num?)?.toInt(),
         poolSize: ids.length,
         nativeFactoryId: json['native_factory_id'] as String?,
+        bannerSize: json['banner_size'] as String?,
+        bannerMode: json['banner_mode'] as String?,
       );
     }
   }

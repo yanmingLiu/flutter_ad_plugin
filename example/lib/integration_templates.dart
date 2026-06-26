@@ -34,6 +34,27 @@ class MyConfigRepository extends DefaultAdConfigRepository {
           'refresh_minutes': 20,
         },
       ],
+      'bottom_banner': [
+        {
+          'source': 'admob',
+          'weight': 1,
+          'type': 'banner',
+          'id': ids.banner,
+          'banner_size': 'banner',
+          'banner_mode': 'global',
+          'refresh_minutes': 30,
+        },
+      ],
+      'article_inline_banner': [
+        {
+          'source': 'admob',
+          'weight': 1,
+          'type': 'banner',
+          'ids': [ids.banner, ids.banner],
+          'banner_size': 'banner',
+          'banner_mode': 'inline',
+        },
+      ],
       'message': [
         _fullscreenNativeUnit(ids),
         {
@@ -133,6 +154,7 @@ class _AdMobTestIds {
     required this.rewarded,
     required this.native,
     required this.nativeVideo,
+    required this.banner,
   });
 
   final String open;
@@ -140,6 +162,7 @@ class _AdMobTestIds {
   final String rewarded;
   final String native;
   final String nativeVideo;
+  final String banner;
 
   static _AdMobTestIds get current {
     return Platform.isAndroid ? android : ios;
@@ -151,6 +174,7 @@ class _AdMobTestIds {
     rewarded: 'ca-app-pub-3940256099942544/5224354917',
     native: 'ca-app-pub-3940256099942544/2247696110',
     nativeVideo: 'ca-app-pub-3940256099942544/1044960115',
+    banner: 'ca-app-pub-3940256099942544/6300978111',
   );
 
   static const ios = _AdMobTestIds(
@@ -159,6 +183,7 @@ class _AdMobTestIds {
     rewarded: 'ca-app-pub-3940256099942544/1712485313',
     native: 'ca-app-pub-3940256099942544/3986624511',
     nativeVideo: 'ca-app-pub-3940256099942544/2521693316',
+    banner: 'ca-app-pub-3940256099942544/2934735716',
   );
 }
 

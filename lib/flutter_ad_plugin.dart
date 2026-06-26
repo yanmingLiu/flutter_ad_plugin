@@ -1,4 +1,5 @@
 import 'package:flutter/widgets.dart';
+import 'package:google_mobile_ads/google_mobile_ads.dart';
 
 import 'src/core/ad_config.dart';
 import 'src/core/ad_enums.dart';
@@ -157,6 +158,58 @@ class FlutterAdPlugin {
       placementLabel: placementLabel,
       eventName: eventName,
     );
+  }
+
+  /// 预加载指定广告位的 Banner 广告。
+  static Future<bool> loadBanner(
+    PlacementType placement, {
+    required String eventName,
+  }) {
+    return AdEngine.instance.preloadBanner(placement, eventName: eventName);
+  }
+
+  /// 获取已缓存的 Banner 广告对象，用于 [bannerAdWidget] 渲染。
+  /// 返回 `null` 表示无缓存。
+  static Object? getBannerAd(PlacementType placement) {
+    return AdEngine.instance.getBannerAd(placement);
+  }
+
+  /// 获取多个缓存的 Banner 广告对象，用于列表内嵌多个广告位。
+  ///
+  /// 返回最多 [count] 个 [BannerAd]。更新每个广告的归因以确保后续
+  /// click/income 事件携带正确的 eventName。
+  static List<Object> getBannerAds(
+    PlacementType placement, {
+    int count = 2,
+    String? placementLabel,
+    required String eventName,
+  }) {
+    return AdEngine.instance.getBannerAds(
+      placement,
+      count: count,
+      placementLabel: placementLabel,
+      eventName: eventName,
+    ).toList();
+  }
+
+  /// 销毁指定广告位的缓存 Banner 广告并取消自动刷新。
+  ///
+  /// 用于页面退出时手动清理内联 Banner（`banner_mode: "inline"`）。
+  /// 全局 Banner（默认）通常由插件自动管理，无需手动调用。
+  static void disposeBannerAd(PlacementType placement) {
+    AdEngine.instance.disposeBannerAd(placement);
+  }
+
+  /// 渲染 Banner 广告的 Widget。
+  static Widget bannerAdWidget({required Object ad}) {
+    if (ad is BannerAd) {
+      return SizedBox(
+        width: ad.size.width.toDouble(),
+        height: ad.size.height.toDouble(),
+        child: AdWidget(ad: ad),
+      );
+    }
+    return const SizedBox.shrink();
   }
 
   /// 渲染单个原生广告的 Widget。

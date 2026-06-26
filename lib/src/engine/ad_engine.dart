@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/widgets.dart';
+import 'package:google_mobile_ads/google_mobile_ads.dart';
 
 import '../core/ad_config.dart';
 import '../core/ad_enums.dart';
@@ -50,6 +51,10 @@ class AdEngine {
   _AdPoolStore _nativePool = _AdPoolStore();
   final Map<PlacementType, Timer> _nativeRefreshTimers = {};
 
+  _AdPoolStore _bannerPool = _AdPoolStore();
+  final Map<PlacementType, Future<bool>> _bannerLoadingFutures = {};
+  final Map<PlacementType, Timer> _bannerRefreshTimers = {};
+
   AdConfigRepository get configRepository => _configRepository;
   Future<AdConfig> get config => _configRepository.getConfig();
 
@@ -97,6 +102,7 @@ class AdEngine {
             AdmobInterstitialAdapter(),
             AdmobRewardedAdapter(),
             AdmobNativeAdapter(),
+            AdmobBannerAdapter(),
           ],
     );
 
@@ -118,6 +124,10 @@ class AdEngine {
     instance._nativePool = _AdPoolStore();
     instance._nativeRefreshTimers.forEach((_, timer) => timer.cancel());
     instance._nativeRefreshTimers.clear();
+    instance._bannerPool = _AdPoolStore();
+    instance._bannerLoadingFutures.clear();
+    instance._bannerRefreshTimers.forEach((_, timer) => timer.cancel());
+    instance._bannerRefreshTimers.clear();
     instance._guard.resetForTesting();
   }
 
@@ -256,6 +266,7 @@ class AdEngine {
       _reportShowFail(
         adConfig: adConfig,
         placement: showPlacement,
+        placementLabel: placementLabel,
         eventName: eventName,
         errorReason: 'guard_blocked: ${guardResult.reason?.name ?? "unknown"}',
       );
@@ -292,6 +303,7 @@ class AdEngine {
       _reportShowFail(
         adConfig: adConfig,
         placement: showPlacement,
+        placementLabel: placementLabel,
         eventName: eventName,
         errorReason: 'no_cache',
       );
@@ -346,6 +358,25 @@ class AdEngine {
       preferHighValue: showPlacement != placement,
     );
     if (firstSlot == null) {
+      _reportShowFail(
+        adConfig: adConfig,
+        placement: showPlacement,
+        placementLabel: placementLabel,
+        eventName: eventName,
+        errorReason: 'no_cache',
+      );
+      if (policy.showNotReadyToast && _onAdNotReady != null) {
+        _onAdNotReady!(
+          AdNotReadyEvent(
+            requestedPlacement: placement,
+            showPlacement: showPlacement,
+            placementLabel: placementLabel,
+            eventName: eventName,
+            message: policy.notReadyMsg ??
+                'The ad is not ready, please try again later.',
+          ),
+        );
+      }
       return false;
     }
 
@@ -617,6 +648,16 @@ class AdEngine {
           errorReason: e.toString(),
           eventName: eventName,
         );
+      } else {
+        _reportEvent(
+          AdEventType.loadFailed,
+          placement,
+          null,
+          null,
+          null,
+          errorReason: e.toString(),
+          eventName: eventName,
+        );
       }
       pool.setSlots(placement, currentSlots, lastError: e);
       return currentSlots.isNotEmpty;
@@ -638,6 +679,7 @@ class AdEngine {
       placementLabel: placementLabel,
       eventName: eventName,
     );
+    _reportRetrievalEvent(slot, placementLabel: placementLabel, eventName: eventName);
     return slot.ad;
   }
 
@@ -655,8 +697,152 @@ class AdEngine {
         placementLabel: placementLabel,
         eventName: eventName,
       );
+      _reportRetrievalEvent(slot, placementLabel: placementLabel, eventName: eventName);
     }
     return slots.map((slot) => slot.ad).whereType<Object>().toList();
+  }
+
+  // --- Banner Logic ---
+
+  /// Preloads a banner ad for [placement] and caches the result.
+  ///
+  /// 预加载指定广告位的 Banner 广告并缓存。
+  Future<bool> preloadBanner(
+    PlacementType placement, {
+    required String eventName,
+  }) async {
+    final config = await _configRepository.getConfig();
+    if (!config.hasPlacement(placement)) {
+      return false;
+    }
+
+    if (_bannerLoadingFutures.containsKey(placement)) {
+      return await _bannerLoadingFutures[placement]!;
+    }
+
+    final current = _bannerPool[placement];
+    final targetCount = config.cacheSizeFor(placement);
+    if ((current?.count ?? 0) >= targetCount) {
+      return true;
+    }
+
+    final loadFuture = _performBannerLoad(placement, eventName: eventName);
+    _bannerLoadingFutures[placement] = loadFuture;
+
+    try {
+      return await loadFuture;
+    } finally {
+      _bannerLoadingFutures.remove(placement);
+    }
+  }
+
+  Future<bool> _performBannerLoad(
+    PlacementType placement, {
+    required String eventName,
+  }) async {
+    final config = await _configRepository.getConfig();
+    final units = config.getUnits(placement);
+    final bannerUnit = units.where((u) => u.type.isBanner).firstOrNull;
+    final isGlobal = bannerUnit?.isGlobalBanner ?? true;
+
+    final result = await _performLoad(
+      placement: placement,
+      eventName: eventName,
+      kind: _AdLoadKind.native,
+      pool: _bannerPool,
+      targetCountFor: (config) => config.cacheSizeFor(placement),
+      unitsFor: (config) {
+        final policy = config.getPolicy(placement);
+        return config
+            .getUnits(placement)
+            .where((unit) => unit.isValid)
+            .where((unit) => policy.supports(unit.type))
+            .where((unit) => unit.type.isBanner)
+            .where((unit) => !_bannerPool.hasCacheKey(placement, unit.cacheKey));
+      },
+      adapterTypeFor: (_) => AdType.banner,
+      loadedTypeFor: (_) => AdType.banner,
+      onLoaded: isGlobal ? (unit) {
+        _scheduleBannerRefresh(
+          placement,
+          unit.refreshMinutes,
+          eventName: eventName,
+        );
+      } : null,
+    );
+    return result;
+  }
+
+  void _scheduleBannerRefresh(
+    PlacementType placement,
+    int? minutes, {
+    required String eventName,
+  }) {
+    _bannerRefreshTimers.remove(placement)?.cancel();
+    _bannerRefreshTimers[placement] = Timer(
+      Duration(minutes: minutes ?? 40),
+      () {
+        _bannerPool.remove(placement);
+        preloadBanner(placement, eventName: eventName);
+      },
+    );
+  }
+
+  /// Returns a cached [BannerAd] for [placement], or `null` if none loaded.
+  ///
+  /// 返回指定广告位缓存的 BannerAd。
+  BannerAd? getBannerAd(PlacementType placement) {
+    final slot = _bannerPool.slots(placement).firstOrNull;
+    return slot?.ad as BannerAd?;
+  }
+
+  /// Returns multiple cached [BannerAd]s for [placement].
+  /// Returns at most [count] ads. Empty list if none loaded.
+  ///
+  /// Updates attribution on each retrieved ad so subsequent click/income
+  /// events carry the correct [eventName].
+  ///
+  /// 返回多个缓存的 BannerAd，最多 [count] 个。
+  /// 更新每个广告的归因以确保后续事件携带正确的 eventName。
+  List<BannerAd> getBannerAds(
+    PlacementType placement, {
+    int count = 2,
+    String? placementLabel,
+    required String eventName,
+  }) {
+    final slots = _bannerPool.slots(placement).take(count).toList();
+    for (final slot in slots) {
+      final ad = slot.ad;
+      if (ad != null) {
+        AdmobBannerAdapter.updateAttribution(
+          ad: ad,
+          placement: placement,
+          placementLabel: placementLabel,
+          eventName: eventName,
+        );
+      }
+      _reportRetrievalEvent(slot, placementLabel: placementLabel, eventName: eventName);
+    }
+    return slots.map((s) => s.ad).whereType<BannerAd>().toList();
+  }
+
+  /// Disposes the cached banner ad(s) for [placement] and cancels auto-refresh.
+  ///
+  /// Use when the banner widget is removed from the tree (e.g. page pop).
+  /// Does nothing if no banner is cached for this placement.
+  ///
+  /// 销毁指定广告位缓存的 Banner 广告并取消自动刷新。
+  /// 在 Banner Widget 从树中移除时调用（如页面退出）。
+  void disposeBannerAd(PlacementType placement) {
+    _bannerRefreshTimers.remove(placement)?.cancel();
+    final slots = List<PlacementAdSlot>.of(_bannerPool.slots(placement));
+    for (final slot in slots) {
+      final ad = slot.ad;
+      if (ad != null) {
+        _adapterRegistry!.get(slot.loadedSource!, slot.loadedType!).dispose(ad);
+      }
+    }
+    _bannerPool.remove(placement);
   }
 
   void _scheduleNativeRefresh(
@@ -755,6 +941,7 @@ class AdEngine {
       slot.loadedType!,
       slot.loadedSource!,
       slot.adUnitId!,
+      placementLabel: placementLabel,
       eventName: eventName,
     );
     final result = await adapter.show(
@@ -812,11 +999,13 @@ class AdEngine {
     AdSource? s,
     String? id, {
     String? errorReason,
+    String? placementLabel,
     required String eventName,
   }) {
     final event = AdEvent(
       eventType: type,
       placement: p,
+      placementLabel: placementLabel,
       adType: t,
       source: s,
       adUnitId: id,
@@ -828,14 +1017,41 @@ class AdEngine {
     _reporter.report(event);
   }
 
+  void _reportRetrievalEvent(
+    PlacementAdSlot slot, {
+    String? placementLabel,
+    required String eventName,
+  }) {
+    _reportEvent(
+      AdEventType.show,
+      slot.placement,
+      slot.loadedType,
+      slot.loadedSource,
+      slot.adUnitId,
+      placementLabel: placementLabel,
+      eventName: eventName,
+    );
+  }
+
   void _reportShowFail({
     required AdConfig adConfig,
     required PlacementType placement,
+    String? placementLabel,
     required String eventName,
     required String errorReason,
   }) {
     final units = adConfig.getUnits(placement);
     final unit = units.isNotEmpty ? units.first : null;
+
+    _reportEvent(
+      AdEventType.show,
+      placement,
+      unit?.type,
+      unit?.source,
+      unit?.id,
+      placementLabel: placementLabel,
+      eventName: eventName,
+    );
     _reportEvent(
       AdEventType.showFail,
       placement,
@@ -843,6 +1059,7 @@ class AdEngine {
       unit?.source,
       unit?.id,
       errorReason: errorReason,
+      placementLabel: placementLabel,
       eventName: eventName,
     );
   }
@@ -870,6 +1087,12 @@ class AdEngine {
             (!policy.isFullscreen || unit.type.isDoubleNative),
       )) {
         unawaited(preloadNative(p, eventName: eventName));
+      }
+      if (units.any((unit) => unit.type.isBanner)) {
+        final bannerUnits = units.where((u) => u.type.isBanner);
+        if (bannerUnits.any((u) => u.isGlobalBanner)) {
+          unawaited(preloadBanner(p, eventName: eventName));
+        }
       }
     }
   }

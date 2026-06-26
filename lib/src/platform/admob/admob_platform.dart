@@ -211,23 +211,23 @@ abstract class _AdmobFullscreenAdapter<TAd extends AdWithoutView>
           ad.dispose();
           if (!completer.isCompleted) {
             completer.complete(AdShowResult.failure(error));
+            _reportLifecycleEvent(
+              reporter,
+              AdEvent(
+                eventType: AdEventType.showFail,
+                placement: placement,
+                placementLabel: placementLabel,
+                adType: type,
+                source: source,
+                adUnitId: ad.adUnitId,
+                errorCode: error.code,
+                errorReason: error.message,
+                timestamp: DateTime.now(),
+                eventName: eventName,
+                network: ad.responseInfo?.loadedAdapterResponseInfo?.adSourceName,
+              ),
+            );
           }
-          _reportLifecycleEvent(
-            reporter,
-            AdEvent(
-              eventType: AdEventType.showFail,
-              placement: placement,
-              placementLabel: placementLabel,
-              adType: type,
-              source: source,
-              adUnitId: ad.adUnitId,
-              errorCode: error.code,
-              errorReason: error.message,
-              timestamp: DateTime.now(),
-              eventName: eventName,
-              network: ad.responseInfo?.loadedAdapterResponseInfo?.adSourceName,
-            ),
-          );
         },
         onAdDismissedFullScreenContent: (ad) {
           ad.dispose();
@@ -275,21 +275,21 @@ abstract class _AdmobFullscreenAdapter<TAd extends AdWithoutView>
       fullscreenAd.dispose();
       if (!completer.isCompleted) {
         completer.complete(AdShowResult.failure(e));
+        _reportLifecycleEvent(
+          reporter,
+          AdEvent(
+            eventType: AdEventType.showFail,
+            placement: placement,
+            placementLabel: placementLabel,
+            adType: type,
+            source: source,
+            adUnitId: fullscreenAd.adUnitId,
+            errorReason: e.toString(),
+            timestamp: DateTime.now(),
+            eventName: eventName,
+          ),
+        );
       }
-      _reportLifecycleEvent(
-        reporter,
-        AdEvent(
-          eventType: AdEventType.showFail,
-          placement: placement,
-          placementLabel: placementLabel,
-          adType: type,
-          source: source,
-          adUnitId: fullscreenAd.adUnitId,
-          errorReason: e.toString(),
-          timestamp: DateTime.now(),
-          eventName: eventName,
-        ),
-      );
     }
 
     return completer.future;
@@ -794,10 +794,252 @@ class AdmobNativeAdapter implements AdTypeAdapter {
   }
 }
 
+/// AdMob banner ad adapter.
+///
+/// Banner ads are inline widgets rendered via [AdWidget]. The adapter loads
+/// the [BannerAd] and caches it; the host retrieves it with [getBannerAd] and
+/// displays it in the widget tree. Unlike fullscreen ads, [show] is a no-op
+/// because banners are always visible once placed in the widget.
+///
+/// ---
+/// AdMob Banner 广告适配器。
+/// Banner 是内联 Widget，通过 [AdWidget] 展示。适配器负责加载 BannerAd 并缓存，
+/// 宿主通过 getBannerAd 取用并在 Widget 树中渲染。show 为无操作。
+class AdmobBannerAdapter implements AdTypeAdapter {
+  @override
+  AdSource get source => AdSource.admob;
+  @override
+  AdType get type => AdType.banner;
+
+  static final Map<BannerAd, NativeAdAttribution> _attributions = {};
+  static final Map<BannerAd, _BannerAdState> _states = {};
+
+  /// Updates the attribution for [ad] so that subsequent click/income events
+  /// carry the correct [eventName]. Called by the engine when the banner is
+  /// retrieved from cache.
+  ///
+  /// 更新广告归因，使后续 click/income 事件携带正确的 eventName。
+  static void updateAttribution({
+    required Object ad,
+    required PlacementType placement,
+    String? placementLabel,
+    required String eventName,
+  }) {
+    if (ad is! BannerAd) return;
+    final attribution = _attributions[ad];
+    if (attribution == null) {
+      _attributions[ad] = NativeAdAttribution(
+        placement: placement,
+        placementLabel: placementLabel,
+        eventName: eventName,
+      );
+      return;
+    }
+    attribution
+      ..placement = placement
+      ..placementLabel = placementLabel
+      ..eventName = eventName;
+  }
+
+  static AdSize _bannerSizeFor(String? bannerSize) {
+    switch (bannerSize?.toLowerCase()) {
+      case 'large_banner':
+        return AdSize.largeBanner;
+      case 'medium_rectangle':
+        return AdSize.mediumRectangle;
+      case 'leaderboard':
+        return AdSize.leaderboard;
+      default:
+        return AdSize.banner;
+    }
+  }
+
+  @override
+  Future<AdLoadResult<Object>> load({
+    required PlacementType placement,
+    required AdUnitConfig unit,
+    required Duration timeout,
+    required AdEventReporter reporter,
+    required String eventName,
+    bool renderAsFullscreen = false,
+    void Function(Object ad, AdType type, String adUnitId)? onLateAdLoaded,
+  }) async {
+    final completer = Completer<AdLoadResult<Object>>();
+
+    final timer = Timer(timeout, () {
+      if (!completer.isCompleted) {
+        log.v(
+          '❌ [adapter_load] timeout: source=${source.name} type=${type.name} '
+          'placement=${placement.name} id=${unit.id} timeout=${timeout.inSeconds}s',
+        );
+        completer.complete(
+          AdLoadResult.failure(
+            type: type,
+            adUnitId: unit.id,
+            error: TimeoutException('banner ad load timeout'),
+          ),
+        );
+      }
+    });
+
+    final ad = BannerAd(
+      adUnitId: unit.id,
+      size: _bannerSizeFor(unit.bannerSize),
+      request: const AdRequest(),
+      listener: BannerAdListener(
+        onAdLoaded: (ad) {
+          final bannerAd = ad as BannerAd;
+          _attributions[bannerAd] = NativeAdAttribution(
+            placement: placement,
+            eventName: eventName,
+          );
+          _states.putIfAbsent(bannerAd, _BannerAdState.new);
+          if (!completer.isCompleted) {
+            completer.complete(
+              AdLoadResult.success(ad: bannerAd, type: type, adUnitId: unit.id),
+            );
+            return;
+          }
+          if (onLateAdLoaded != null) {
+            onLateAdLoaded(bannerAd, type, unit.id);
+          } else {
+            bannerAd.dispose();
+          }
+        },
+        onAdFailedToLoad: (ad, error) {
+          if (ad is BannerAd) {
+            _attributions.remove(ad);
+            _states.remove(ad);
+          }
+          log.v(
+            '❌ [adapter_load] failed: source=${source.name} type=${type.name} '
+            'placement=${placement.name} id=${unit.id} code=${error.code} '
+            'message=${error.message}',
+          );
+          ad.dispose();
+          if (!completer.isCompleted) {
+            completer.complete(
+              AdLoadResult.failure(
+                type: type,
+                adUnitId: unit.id,
+                error: error,
+              ),
+            );
+          }
+        },
+        onAdClicked: (ad) {
+          final attribution = _attributions[ad];
+          final reportPlacement = attribution?.placement ?? placement;
+          _reportLifecycleEvent(
+            reporter,
+            AdEvent(
+              eventType: AdEventType.clicked,
+              placement: reportPlacement,
+              placementLabel: attribution?.placementLabel,
+              adType: type,
+              source: source,
+              adUnitId: unit.id,
+              timestamp: DateTime.now(),
+              eventName: attribution?.eventName ?? eventName,
+              network:
+                  ad.responseInfo?.loadedAdapterResponseInfo?.adSourceName,
+            ),
+          );
+        },
+        onAdImpression: (ad) {
+          final bannerAd = ad as BannerAd;
+          final state = _states.putIfAbsent(bannerAd, _BannerAdState.new);
+          final attribution = _attributions[bannerAd];
+          if (state.impressionReported) return;
+          state.impressionReported = true;
+          _reportLifecycleEvent(
+            reporter,
+            AdEvent(
+              eventType: AdEventType.showSuccess,
+              placement: attribution?.placement ?? placement,
+              placementLabel: attribution?.placementLabel,
+              adType: type,
+              source: source,
+              adUnitId: unit.id,
+              timestamp: DateTime.now(),
+              eventName: attribution?.eventName ?? eventName,
+              network:
+                  ad.responseInfo?.loadedAdapterResponseInfo?.adSourceName,
+            ),
+          );
+        },
+        onPaidEvent: (ad, valueMicros, precision, currencyCode) {
+          final attribution = _attributions[ad];
+          final reportPlacement = attribution?.placement ?? placement;
+          _reportPaidEvent(
+            reporter: reporter,
+            placement: reportPlacement,
+            placementLabel: attribution?.placementLabel,
+            eventName: attribution?.eventName ?? eventName,
+            adType: type,
+            source: source,
+            adUnitId: unit.id,
+            valueMicros: valueMicros,
+            currencyCode: currencyCode,
+            network: ad.responseInfo?.loadedAdapterResponseInfo?.adSourceName,
+          );
+        },
+      ),
+    );
+
+    try {
+      await ad.load();
+    } catch (e) {
+      log.v(
+        '❌ [adapter_load] failed: source=${source.name} type=${type.name} '
+        'placement=${placement.name} id=${unit.id} error=$e',
+      );
+      ad.dispose();
+      if (!completer.isCompleted) {
+        completer.complete(
+          AdLoadResult.failure(type: type, adUnitId: unit.id, error: e),
+        );
+      }
+    }
+
+    return completer.future.whenComplete(timer.cancel);
+  }
+
+  @override
+  Future<AdShowResult> show({
+    required PlacementType placement,
+    BuildContext? context,
+    String? placementLabel,
+    required String eventName,
+    required Object ad,
+    required AdEventReporter reporter,
+    VoidCallback? onAdShowed,
+    VoidCallback? onClosed,
+    int closePassThroughPercent = 0,
+    AdFullScreenNativeStyle style = const AdFullScreenNativeStyle(),
+  }) async {
+    onAdShowed?.call();
+    return AdShowResult.success();
+  }
+
+  @override
+  void dispose(Object ad) {
+    if (ad is BannerAd) {
+      _attributions.remove(ad);
+      _states.remove(ad);
+      ad.dispose();
+    }
+  }
+}
+
+class _BannerAdState {
+  bool impressionReported = false;
+}
+
 class _NativeAdState {
   bool clicked = false;
   bool impressionReported = false;
-  bool reportShowSuccessOnImpression = false;
+  bool reportShowSuccessOnImpression = true;
   VoidCallback? onAdShowed;
   final Set<VoidCallback> clickListeners = <VoidCallback>{};
 }
