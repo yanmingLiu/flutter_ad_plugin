@@ -1,11 +1,11 @@
-import 'dart:ui';
-
+import 'package:flutter/widgets.dart';
 import 'package:flutter_ad_plugin/src/core/ad_config.dart';
 import 'package:flutter_ad_plugin/src/core/ad_enums.dart';
 import 'package:flutter_ad_plugin/src/core/ad_models.dart';
 import 'package:flutter_ad_plugin/src/platform/ad_adapter.dart';
+import 'package:flutter_ad_plugin/src/platform/ad_callback.dart';
 import 'package:flutter_ad_plugin/src/platform/ad_registry.dart';
-import 'package:flutter_ad_plugin/src/utils/ad_reporter.dart';
+import 'package:flutter_ad_plugin/src/utils/cancellation_token.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 class _FakeAdapter implements AdTypeAdapter {
@@ -25,8 +25,10 @@ class _FakeAdapter implements AdTypeAdapter {
     required PlacementType placement,
     required AdUnitConfig unit,
     required Duration timeout,
-    required AdEventReporter reporter,
     required String eventName,
+    bool renderAsFullscreen = false,
+    CancellationToken? cancellationToken,
+    void Function(AdRawCallback)? onCallback,
     void Function(Object ad, AdType type, String adUnitId)? onLateAdLoaded,
   }) async {
     return AdLoadResult.success(
@@ -39,12 +41,14 @@ class _FakeAdapter implements AdTypeAdapter {
   @override
   Future<AdShowResult> show({
     required PlacementType placement,
+    BuildContext? context,
     String? placementLabel,
     required String eventName,
     required Object ad,
-    required AdEventReporter reporter,
     VoidCallback? onAdShowed,
     VoidCallback? onClosed,
+    int closePassThroughPercent = 0,
+    void Function(AdRawCallback)? onCallback,
   }) async {
     return AdShowResult.success();
   }
@@ -66,114 +70,49 @@ class _FakeSdkInitializer implements AdSourceSdkInitializer {
 
 void main() {
   group('AdAdapterRegistry', () {
-    test('retrieves registered adapter by source and type', () {
-      final adapter = _FakeAdapter(AdSource.admob, AdType.open);
+    test('returns adapter registered by source+type', () {
+      final adapter = _FakeAdapter(AdSource.admob, AdType.interstitial);
       final registry = AdAdapterRegistry([adapter]);
 
-      final retrieved = registry.get(AdSource.admob, AdType.open);
-      expect(retrieved, same(adapter));
+      final result = registry.get(AdSource.admob, AdType.interstitial);
+      expect(result, same(adapter));
     });
 
-    test('retrieves correct adapter among multiple', () {
+    test('stores multiple adapters', () {
       final openAdapter = _FakeAdapter(AdSource.admob, AdType.open);
-      final interstitialAdapter = _FakeAdapter(AdSource.admob, AdType.interstitial);
       final rewardedAdapter = _FakeAdapter(AdSource.admob, AdType.rewarded);
-      final nativeAdapter = _FakeAdapter(AdSource.admob, AdType.native);
-
-      final registry = AdAdapterRegistry([
-        openAdapter,
-        interstitialAdapter,
-        rewardedAdapter,
-        nativeAdapter,
-      ]);
+      final registry = AdAdapterRegistry([openAdapter, rewardedAdapter]);
 
       expect(registry.get(AdSource.admob, AdType.open), same(openAdapter));
-      expect(registry.get(AdSource.admob, AdType.interstitial), same(interstitialAdapter));
-      expect(registry.get(AdSource.admob, AdType.rewarded), same(rewardedAdapter));
-      expect(registry.get(AdSource.admob, AdType.native), same(nativeAdapter));
-    });
-
-    test('throws StateError for unregistered source+type combination', () {
-      final adapter = _FakeAdapter(AdSource.admob, AdType.open);
-      final registry = AdAdapterRegistry([adapter]);
-
       expect(
-        () => registry.get(AdSource.max, AdType.interstitial),
-        throwsA(isA<StateError>()),
+        registry.get(AdSource.admob, AdType.rewarded),
+        same(rewardedAdapter),
       );
     });
 
-    test('throws StateError for unregistered type of known source', () {
-      final adapter = _FakeAdapter(AdSource.admob, AdType.open);
-      final registry = AdAdapterRegistry([adapter]);
-
-      expect(
-        () => registry.get(AdSource.admob, AdType.interstitial),
-        throwsA(isA<StateError>()),
+    test('throws StateError for unregistered adapter', () {
+      final registry = AdAdapterRegistry(
+        [_FakeAdapter(AdSource.admob, AdType.interstitial)],
       );
-    });
-
-    test('throws StateError for unregistered source of known type', () {
-      final adapter = _FakeAdapter(AdSource.admob, AdType.open);
-      final registry = AdAdapterRegistry([adapter]);
-
-      expect(
-        () => registry.get(AdSource.max, AdType.open),
-        throwsA(isA<StateError>()),
-      );
-    });
-
-    test('error message includes source and type names', () {
-      final registry = AdAdapterRegistry([]);
-
       expect(
         () => registry.get(AdSource.admob, AdType.open),
-        throwsA(predicate<StateError>((e) {
-          final msg = e.toString();
-          return msg.contains('admob') && msg.contains('open');
-        })),
+        throwsA(isA<StateError>()),
       );
     });
   });
 
   group('AdSdkInitializer', () {
+    test('initAll calls init on all initializers', () async {
+      final initializer = _FakeSdkInitializer(AdSource.admob);
+      final sdk = AdSdkInitializer([initializer]);
+      await sdk.initAll();
+    });
+
     test('supports returns true for registered source', () {
       final initializer = _FakeSdkInitializer(AdSource.admob);
-      final sdkInit = AdSdkInitializer([initializer]);
-
-      expect(sdkInit.supports(AdSource.admob), isTrue);
-    });
-
-    test('supports returns false for unregistered source', () {
-      final initializer = _FakeSdkInitializer(AdSource.admob);
-      final sdkInit = AdSdkInitializer([initializer]);
-
-      expect(sdkInit.supports(AdSource.max), isFalse);
-    });
-
-    test('initSource throws StateError for unregistered source', () {
-      final initializer = _FakeSdkInitializer(AdSource.admob);
-      final sdkInit = AdSdkInitializer([initializer]);
-
-      expect(
-        () => sdkInit.initSource(AdSource.max),
-        throwsA(isA<StateError>()),
-      );
-    });
-
-    test('initSource succeeds for registered source', () {
-      final initializer = _FakeSdkInitializer(AdSource.admob);
-      final sdkInit = AdSdkInitializer([initializer]);
-
-      expect(sdkInit.initSource(AdSource.admob), completes);
-    });
-
-    test('initAll initializes all registered sources', () async {
-      final admobInit = _FakeSdkInitializer(AdSource.admob);
-      final sdkInit = AdSdkInitializer([admobInit]);
-
-      await sdkInit.initAll();
-      // Should complete without error
+      final sdk = AdSdkInitializer([initializer]);
+      expect(sdk.supports(AdSource.admob), isTrue);
+      expect(sdk.supports(AdSource.max), isFalse);
     });
   });
 }

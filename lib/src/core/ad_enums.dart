@@ -27,6 +27,7 @@ class AdType {
   static const rewarded = AdType('rewarded');
   static const native = AdType('native');
   static const doubleNative = AdType('double_native');
+  static const banner = AdType('banner');
 
   @override
   bool operator ==(Object other) =>
@@ -42,6 +43,8 @@ class AdType {
   bool get isNative => this == native || this == doubleNative;
 
   bool get isDoubleNative => this == doubleNative;
+
+  bool get isBanner => this == banner;
 
   @override
   String toString() => name;

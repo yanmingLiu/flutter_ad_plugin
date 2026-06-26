@@ -24,9 +24,13 @@
 - JSON 驱动广告位：新增 placement 只需要改配置，不需要改插件代码。
 - 宿主注入配置：实现 `AdConfigRepository`，可以接接口、Firebase Remote Config、本地缓存或纯本地 Map。
 - 宿主注入埋点：实现 `AdEventReporter`，插件只透传生命周期事件和 `eventName`。
-- 支持开屏、插屏、激励、原生、双原生组合。
+- 支持开屏、插屏、激励、原生、双原生组合、Banner。
 - 支持同广告位多 ID 缓存、公共兜底位、高价位替换、展示冷却策略。
-- 预置 7 个 AdMob 中介适配器（AppLovin / Meta / Pangle / Liftoff / Mintegral / Unity / InMobi），宿主 App 开箱即用。
+- 支持 Banner 全局/内联两种生命周期模式。
+- 实例化 API（`AdPlugin`），支持多实例隔离。
+- 回调外放架构：适配器通过 `AdRawCallback` 外抛生命周期事件，引擎层统一映射上报。
+- `AdWidgetFactory` 隔离平台依赖，宿主无需直接 import `google_mobile_ads`。
+- 预置 AdMob 适配器，支持开屏/插屏/激励/原生/Banner。
 - `preloadPlacements()` 是 fire-and-forget，只负责发起批量预加载，不等待所有广告加载完成。
 
 ### 边界
@@ -47,7 +51,7 @@ dependencies:
   flutter_ad_plugin:
     git:
       url: git@github.com:yanmingLiu/flutter_ad_plugin.git
-      ref: v0.1.0
+      ref: v0.2.0
 ```
 
 ### 最小代码
@@ -55,15 +59,19 @@ dependencies:
 ```dart
 import 'package:flutter_ad_plugin/flutter_ad_plugin.dart';
 
-await FlutterAdPlugin.init(
-  configRepository: DefaultAdConfigRepository(localConfig: adConfigJson),
-  eventReporter: MyAdEventReporter(),
-  onAdNotReady: (event) {
-    // 插件不依赖弹窗库。宿主按自己的 UI 体系弹 toast/snackbar/dialog。
-  },
+final adPlugin = AdPlugin(
+  config: AdPluginConfig(
+    configRepository: DefaultAdConfigRepository(localConfig: adConfigJson),
+    eventReporter: MyAdEventReporter(),
+    onAdNotReady: (event) {
+      // 插件不依赖弹窗库。宿主按自己的 UI 体系弹 toast/snackbar/dialog。
+    },
+  ),
 );
 
-FlutterAdPlugin.preloadPlacements(
+await adPlugin.init();
+
+adPlugin.preloadPlacements(
   const [
     PlacementType('open'),
     PlacementType('home'),
@@ -72,7 +80,7 @@ FlutterAdPlugin.preloadPlacements(
   eventName: 'open_cold',
 );
 
-final shown = await FlutterAdPlugin.show(
+final shown = await adPlugin.show(
   const PlacementType('open'),
   eventName: 'open_cold',
 );
@@ -93,39 +101,59 @@ final shown = await FlutterAdPlugin.show(
 | `loadNative()` | 预加载原生广告 | 等待本次加载链路结束 |
 | `getNativeAd()` | 取单个原生缓存并更新展示归因 | 同步返回 |
 | `getNativeAds()` | 取多个原生缓存，用于双原生 | 同步返回 |
+| `loadBanner()` | 预加载 Banner 广告 | 等待本次加载链路结束 |
+| `getBannerAd()` | 取单个 Banner 缓存 | 同步返回 |
+| `disposeBannerAd()` | 销毁 Banner 缓存并取消刷新 | 同步 |
+| `dispose()` | 销毁插件，释放所有定时器和缓存 | 同步 |
 
 ### 原生广告
 
 ```dart
 const homePlacement = PlacementType('home');
 
-await FlutterAdPlugin.loadNative(homePlacement, eventName: 'first_load');
+await adPlugin.loadNative(homePlacement, eventName: 'first_load');
 
-final ad = FlutterAdPlugin.getNativeAd(
+final ad = adPlugin.getNativeAd(
   homePlacement,
   eventName: 'home_show',
 );
 
 if (ad != null) {
-  NativeAdView(ad: ad, height: 280);
+  adPlugin.widgetFactory.nativeWidget(ad, height: 280);
 }
 ```
 
 双原生：
 
 ```dart
-final ads = FlutterAdPlugin.getNativeAds(
+final ads = adPlugin.getNativeAds(
   const PlacementType('play_middle'),
   count: 2,
   eventName: 'play_middle',
 );
 
 if (ads.length >= 2) {
-  DualNativeAdView(ads: ads, height: 560);
+  adPlugin.widgetFactory.dualNativeWidget(ads, height: 560);
 }
 ```
 
 当前 AdMob 原生广告使用 `NativeTemplateStyle`，默认不要求宿主注册自定义 `NativeAdFactory`。如果宿主要自定义原生 UI，则仍需要在 Android / iOS 宿主工程注册自己的 factory。
+
+### Banner 广告
+
+```dart
+const bannerPlacement = PlacementType('bottom_banner');
+
+await adPlugin.loadBanner(bannerPlacement, eventName: 'article');
+
+final bannerAd = adPlugin.getBannerAd(bannerPlacement);
+if (bannerAd != null) {
+  adPlugin.widgetFactory.bannerWidget(bannerAd);
+}
+
+// 页面退出时手动销毁内联 Banner
+adPlugin.disposeBannerAd(bannerPlacement);
+```
 
 <a id="architecture"></a>
 ## 整体架构
@@ -134,64 +162,62 @@ if (ads.length >= 2) {
 
 ```mermaid
 flowchart TD
-  App["Host App"] --> Facade["FlutterAdPlugin"]
-  Facade --> Engine["AdEngine"]
-  Engine --> Repo["AdConfigRepository"]
-  Engine --> Reporter["AdEventReporter"]
-  Engine --> Guard["AdDisplayGuard"]
-  Repo --> Parser["AdConfigParser(JSON)"]
-  Engine --> Registry["AdAdapterRegistry"]
-  Registry --> AdmobOpen["AdmobOpenAdapter"]
-  Registry --> AdmobInt["AdmobInterstitialAdapter"]
-  Registry --> AdmobRew["AdmobRewardedAdapter"]
-  Registry --> AdmobNative["AdmobNativeAdapter"]
+  App["Host App"] --> Plugin["AdPlugin (instance)"]
+  Plugin --> Config["AdPluginConfig"]
+  Plugin --> Loader["AdLoaderService"]
+  Plugin --> Presenter["AdPresenter"]
+  Presenter --> Guard["AdDisplayGuard"]
+  Loader --> Cache["AdCacheService"]
+  Loader --> Lifecycle["AdLifecycleManager"]
+  Plugin --> Mapper["AdEventMapper"]
+  Mapper --> Reporter["AdEventReporter"]
+  Loader --> Registry["AdAdapterRegistry"]
+  Registry --> Adapters["AdMob Adapters (5)"]
+  Plugin --> WidgetFactory["AdWidgetFactory"]
 ```
 
-### Facade
+### 入口
 
-`FlutterAdPlugin` 是唯一推荐给宿主使用的入口。它只保留静态方法，把调用转发给内部 `AdEngine`，避免宿主直接依赖内部类。
+`AdPlugin` 是唯一推荐给宿主使用的入口。每个独立广告配置创建一个 `AdPlugin` 实例，支持多实例隔离。所有 API 均为实例方法。
 
 ### Core
 
-Core 包含三类对象：
+Core 包含：
 
 - `PlacementType` / `AdType` / `AdSource`：用 String 包装，支持服务端动态新增 key。
-- `AdConfig` / `AdUnitConfig` / `PlacementPolicy`：运行时配置模型。
+- `AdConfig` / `AdUnitConfig`：运行时配置模型。
+- `PlacementPolicy`：单广告位展示策略（独立文件）。
 - `AdConfigParser` / `AdConfigRepository`：解析 JSON 和配置来源接口。
-
-`DefaultAdConfigRepository` 只解析传入的 `localConfig` / `localConfigJson`。远端云控、Firebase Remote Config、本地缓存等都由宿主自己实现 `AdConfigRepository`。
+- `AdSlotState` sealed class：`AdSlotLoaded` / `AdSlotFailed`，替代旧 nullable-everything 模型。
 
 ### Engine
 
-`AdEngine` 是编排层，负责：
+Engine 由 6 个独立 Service 组成：
 
-- 初始化广告 SDK 和配置。
-- 按 placement 预加载广告。
-- 管理全屏广告缓存和原生广告缓存。
-- 处理全屏展示、连续展示、公共兜底位、高价位替换。
-- 调用 `AdDisplayGuard` 做展示互斥和冷却判断。
-- 生成生命周期事件并交给 `AdEventReporter`。
+- `AdLoaderService`：全屏/原生/Banner 广告加载编排，瀑布流加载，`CancellationToken` 取消支持。
+- `AdCacheService`：泛型广告缓存 + 归因管理（替代旧 `_AdPoolStore` × 3 + adapter static maps）。
+- `AdPresenter`：全屏广告展示编排 + 槽位选择 + 高价位替换 + 公共兜底。
+- `AdDisplayGuard`：展示互斥 + 冷却策略。
+- `AdLifecycleManager`：定时器/自动刷新统一管理，支持 `dispose()` 清理。
+- `AdEventMapper`：将适配器发出的原始 `AdRawCallback` 转换为 `AdEvent`。
 
-内部 `_AdPoolStore` 只是轻量缓存容器，不是对外服务层。
+### 回调外放（Adapter → Engine → Reporter）
 
-### Guard
+适配器不再直接持有 `AdEventReporter`。它们只通过 `onCallback` 发出 `AdRawCallback`（sealed class 层级），引擎层通过 `AdEventMapper` 转换为 `AdEvent` 并上报。
 
-`AdDisplayGuard` 只处理全屏广告展示约束：
+### 平台隔离
 
-- 同一时刻只允许一个全屏广告展示。
-- 可按配置开启同广告位冷却。
-- 可按配置开启跨广告位冷却。
-
-`showSequence()` 按业务需要连续展示两个广告，不额外套用 CD 逻辑。
+`AdWidgetFactory` 隔离 `google_mobile_ads` 依赖。宿主通过 `adPlugin.widgetFactory.bannerWidget(ad)` / `.nativeWidget(ad)` / `.dualNativeWidget(ads)` 渲染广告，无需直接 import `google_mobile_ads`。
 
 ### Platform
 
-`AdTypeAdapter` 抹平不同 SDK 的加载和展示接口。当前只注册了 AdMob：
+`AdTypeAdapter` 抹平不同 SDK 的加载和展示接口。当前注册了 AdMob：
 
 - `AdmobOpenAdapter`
 - `AdmobInterstitialAdapter`
 - `AdmobRewardedAdapter`
 - `AdmobNativeAdapter`
+- `AdmobBannerAdapter`
 
 后续接 MAX / TopOn 时，新增 adapter 并注册到 `AdAdapterRegistry` 即可。
 
@@ -324,7 +350,13 @@ class MyAdEventReporter implements AdEventReporter {
 需要本地排查完整事件和展示决策时再打开详细日志：
 
 ```dart
-FlutterAdPlugin.verboseLogging = true;
+// 通过 AdPluginConfig 配置
+final adPlugin = AdPlugin(
+  config: AdPluginConfig(
+    verboseLogging: true,
+    ...
+  ),
+);
 ```
 
 打开后会输出完整 `[ad][event]` JSON，并额外输出 guard 拦截、无缓存、连续展示缺第二个广告、预加载耗尽或 SDK 加载失败等内部诊断。
@@ -345,22 +377,31 @@ FlutterAdPlugin.verboseLogging = true;
 ### 3. 初始化
 
 ```dart
-await FlutterAdPlugin.init(
-  configRepository: MyConfigRepository(remoteConfigService),
-  eventReporter: MyAdEventReporter(),
-  placementPolicies: buildPlacementPolicies(),
-  onAdNotReady: (event) {
-    // 可选：根据 event.message 弹 toast/snackbar/dialog。
-  },
+final adPlugin = AdPlugin(
+  config: AdPluginConfig(
+    configRepository: MyConfigRepository(remoteConfigService),
+    eventReporter: MyAdEventReporter(),
+    placementPolicies: buildPlacementPolicies(),
+    onAdNotReady: (event) {
+      // 可选：根据 event.message 弹 toast/snackbar/dialog。
+    },
+  ),
 );
+
+await adPlugin.init();
 ```
 
 展示策略不从 JSON 读取，由宿主通过 `placementPolicies` 传入。`onAdNotReady` 只在对应 `PlacementPolicy.showNotReadyToast=true` 且无广告可展示时触发。插件不会自己弹 UI。
 
+```dart
+// 使用完毕后释放资源
+await adPlugin.dispose();
+```
+
 ### 4. 冷启动预加载和开屏
 
 ```dart
-FlutterAdPlugin.preloadPlacements(
+adPlugin.preloadPlacements(
   const [
     PlacementType('open'),
     PlacementType('home'),
@@ -369,7 +410,7 @@ FlutterAdPlugin.preloadPlacements(
   eventName: 'open_cold',
 );
 
-await FlutterAdPlugin.show(
+await adPlugin.show(
   const PlacementType('open'),
   eventName: 'open_cold',
 );
@@ -387,7 +428,7 @@ await FlutterAdPlugin.show(
 AppStateEventNotifier.startListening();
 _sub = AppStateEventNotifier.appStateStream.listen((state) {
   if (state == AppState.foreground) {
-    FlutterAdPlugin.show(
+    adPlugin.show(
       const PlacementType('open'),
       eventName: 'open_hot',
     );
@@ -398,7 +439,7 @@ _sub = AppStateEventNotifier.appStateStream.listen((state) {
 ### 6. 连续展示
 
 ```dart
-final shown = await FlutterAdPlugin.showSequence(
+final shown = await adPlugin.showSequence(
   const PlacementType('play_middle'),
   eventName: 'play_middle',
 );
@@ -409,12 +450,12 @@ final shown = await FlutterAdPlugin.showSequence(
 ### 7. 原生广告
 
 ```dart
-await FlutterAdPlugin.loadNative(
+await adPlugin.loadNative(
   const PlacementType('home'),
   eventName: 'first_load',
 );
 
-final ad = FlutterAdPlugin.getNativeAd(
+final ad = adPlugin.getNativeAd(
   const PlacementType('home'),
   eventName: 'home_show',
 );
@@ -425,7 +466,7 @@ final ad = FlutterAdPlugin.getNativeAd(
 双原生：
 
 ```dart
-final ads = FlutterAdPlugin.getNativeAds(
+final ads = adPlugin.getNativeAds(
   const PlacementType('play_middle'),
   count: 2,
   eventName: 'play_middle',
@@ -606,7 +647,7 @@ Map<PlacementType, PlacementPolicy> buildPlacementPolicies() {
 使用方式：
 
 ```dart
-final ads = FlutterAdPlugin.getNativeAds(
+final ads = adPlugin.getNativeAds(
   const PlacementType('play_middle'),
   count: 2,
   eventName: 'play_middle',
@@ -621,15 +662,15 @@ final ads = FlutterAdPlugin.getNativeAds(
 ```mermaid
 sequenceDiagram
   participant App
-  participant Plugin as FlutterAdPlugin
-  participant Engine as AdEngine
+  participant Plugin as AdPlugin
+  participant Engine as AdLoaderService
   participant Repo as AdConfigRepository
   participant Parser as AdConfigParser
   participant SDK as AdMob SDK
 
   App->>Plugin: init(configRepository, eventReporter)
-  Plugin->>Engine: initWith(...)
-  Engine->>SDK: initialize()
+  Plugin->>Engine: init(adapters, initializers)
+  Engine->>SDK: initAll()
   Engine->>Repo: getConfig()
   Repo->>Parser: parse(json)
   Parser-->>Repo: AdConfig
@@ -643,8 +684,8 @@ sequenceDiagram
 ```mermaid
 sequenceDiagram
   participant App
-  participant Plugin as FlutterAdPlugin
-  participant Engine as AdEngine
+  participant Plugin as AdPlugin
+  participant Engine as AdLoaderService
   participant Adapter as AdMob Adapter
 
   App->>Plugin: preloadPlacements(placements)
@@ -663,49 +704,58 @@ sequenceDiagram
 ```mermaid
 sequenceDiagram
   participant App
-  participant Engine as AdEngine
+  participant Plugin as AdPlugin
+  participant Presenter as AdPresenter
   participant Guard as AdDisplayGuard
+  participant Loader as AdLoaderService
   participant Adapter as AdMob Adapter
+  participant Mapper as AdEventMapper
   participant Reporter as AdEventReporter
 
-  App->>Engine: show(placement, eventName)
-  Engine->>Engine: resolve common/high-value placement
-  Engine->>Guard: canShow(...)
-  Guard-->>Engine: allowed / blocked
+  App->>Plugin: show(placement, eventName)
+  Plugin->>Presenter: show(...)
+  Presenter->>Presenter: resolve common/high-value placement
+  Presenter->>Guard: canShow(...)
+  Guard-->>Presenter: allowed / blocked
   alt no cache and waitForLoadOnShow
-    Engine->>Adapter: load(unit)
-    Adapter-->>Engine: AdLoadResult
+    Presenter->>Loader: preload(placement)
+    Loader->>Adapter: load(unit)
+    Adapter-->>Loader: AdLoadResult
   end
-  Engine->>Adapter: show(ad)
-  Adapter-->>Reporter: showSuccess / showFail
-  Adapter-->>Reporter: income(onPaidEvent)
-  Adapter-->>Reporter: close
-  Adapter-->>Engine: AdShowResult
-  Engine-->>App: bool
+  Presenter->>Adapter: show(ad, onCallback)
+  Adapter-->>Adapter: onAdShowed / onAdDismissed / onPaidEvent
+  Adapter-->>Mapper: AdRawCallback
+  Mapper-->>Reporter: AdEvent
+  Adapter-->>Presenter: AdShowResult
+  Presenter-->>Plugin: bool
+  Plugin-->>App: Future complete
 ```
 
-`show()` 会阻塞到广告关闭或展示失败。
+`show()` 会阻塞到广告关闭或展示失败。适配器通过 `onCallback` 外抛原始回调，经 `AdEventMapper` 转换后上报。
 
 ### 连续展示
 
 ```mermaid
 sequenceDiagram
   participant App
-  participant Engine as AdEngine
+  participant Plugin as AdPlugin
+  participant Presenter as AdPresenter
   participant Adapter as AdMob Adapter
 
-  App->>Engine: showSequence(placement)
-  Engine->>Engine: select first cached slot
-  Engine->>Engine: select second cached slot
-  Engine->>Adapter: show(first)
-  Adapter-->>Engine: closed / failed
+  App->>Plugin: showSequence(placement)
+  Plugin->>Presenter: showSequence(...)
+  Presenter->>Presenter: select first cached slot
+  Presenter->>Presenter: select second cached slot
+  Presenter->>Adapter: show(first)
+  Adapter-->>Presenter: closed / failed
   alt first shown and second available
-    Engine->>Adapter: show(second)
-    Adapter-->>Engine: closed / failed
+    Presenter->>Adapter: show(second)
+    Adapter-->>Presenter: closed / failed
   else second missing
-    Engine->>Engine: try refill
+    Presenter->>Presenter: try refill
   end
-  Engine-->>App: bool
+  Presenter-->>Plugin: bool
+  Plugin-->>App: Future complete
 ```
 
 `showSequence()` 用于明确需要连续广告的业务场景，不额外套用 CD 逻辑。
@@ -715,35 +765,72 @@ sequenceDiagram
 ```mermaid
 sequenceDiagram
   participant App
-  participant Engine as AdEngine
+  participant Plugin as AdPlugin
+  participant Loader as AdLoaderService
+  participant Cache as AdCacheService
   participant Adapter as AdmobNativeAdapter
+  participant Mapper as AdEventMapper
   participant Reporter as AdEventReporter
 
-  App->>Engine: loadNative(placement, eventName)
-  Engine->>Adapter: load(native unit)
-  Adapter-->>Engine: NativeAd
-  Engine->>Engine: cache native ad
-  App->>Engine: getNativeAd/getNativeAds(show eventName)
-  Engine->>Adapter: update attribution
-  Engine-->>App: NativeAd / List
-  Adapter-->>Reporter: clicked / income
+  App->>Plugin: loadNative(placement, eventName)
+  Plugin->>Loader: preloadNative(...)
+  Loader->>Adapter: load(native unit, onCallback)
+  Adapter-->>Loader: NativeAd
+  Loader->>Cache: addSlot + setAttribution
+  App->>Plugin: getNativeAd/getNativeAds(show eventName)
+  Plugin->>Cache: getSlots + update attribution
+  Plugin-->>App: NativeAd / List
+  Adapter-->>Mapper: AdRawCallback (clicked / paid)
+  Mapper-->>Reporter: AdEvent
 ```
 
-原生广告收入回调可能晚于 `loadNative()`。因此插件在 `getNativeAd()` / `getNativeAds()` 时更新归因，让后续 `income` 带出展示场景的 `eventName`。
+原生广告收入回调通过 `onCallback` 外抛，经 `AdEventMapper` 转换后上报。归因信息由 `AdCacheService` 管理。
+
+### Banner 广告
+
+```mermaid
+sequenceDiagram
+  participant App
+  participant Plugin as AdPlugin
+  participant Loader as AdLoaderService
+  participant Cache as AdCacheService
+  participant Adapter as AdmobBannerAdapter
+  participant Lifecycle as AdLifecycleManager
+  participant Mapper as AdEventMapper
+  participant Reporter as AdEventReporter
+
+  App->>Plugin: loadBanner(placement, eventName)
+  Plugin->>Loader: preloadBanner(...)
+  Loader->>Adapter: load(banner unit, onCallback)
+  Adapter-->>Loader: BannerAd
+  Loader->>Cache: addSlot + setAttribution
+  Loader->>Lifecycle: scheduleRefresh
+  App->>Plugin: getBannerAd(placement)
+  Plugin->>Cache: getSlots
+  Plugin-->>App: BannerAd
+  Adapter-->>Mapper: AdRawCallback (clicked / impression / paid)
+  Mapper-->>Reporter: AdEvent
+```
+
+Banner 广告通过 `AdLifecycleManager` 自动刷新，通过 `AdWidgetFactory` 隔离平台依赖渲染。
 
 ### 未准备提示
 
 ```mermaid
 sequenceDiagram
   participant App
-  participant Engine as AdEngine
+  participant Plugin as AdPlugin
+  participant Presenter as AdPresenter
 
-  App->>Engine: show(placement)
-  Engine->>Engine: no cache / load failed
+  App->>Plugin: show(placement)
+  Plugin->>Presenter: show(...)
+  Presenter->>Presenter: no cache / load failed
   alt showNotReadyToast and onAdNotReady != null
-    Engine-->>App: onAdNotReady(event)
+    Presenter-->>Plugin: onAdNotReady(event)
+    Plugin-->>App: onAdNotReady(event)
   end
-  Engine-->>App: false
+  Presenter-->>Plugin: false
+  Plugin-->>App: false
 ```
 
 插件只回调 `onAdNotReady`，不直接弹 toast。

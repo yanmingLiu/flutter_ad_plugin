@@ -1,79 +1,75 @@
 import 'ad_enums.dart';
 
-class NativeAdAttribution {
-  NativeAdAttribution({
+/// Attribution info stored alongside cached ads.
+///
+/// Tracks which placement and event context an ad belongs to,
+/// so that later lifecycle callbacks (click, impression, paid)
+/// can be correctly attributed.
+///
+/// ---
+/// 缓存在广告旁边的归因信息，记录广告所属的 placement 和事件上下文，
+/// 使后续生命周期回调（click、impression、paid）能被正确归因。
+class AdAttribution {
+  PlacementType placement;
+  String? placementLabel;
+  String eventName;
+
+  AdAttribution({
     required this.placement,
     this.placementLabel,
     required this.eventName,
   });
-
-  PlacementType placement;
-  String? placementLabel;
-  String eventName;
 }
 
-/// 广告缓存池中的单个广告槽位。
+/// Sealed hierarchy for ad slot states in cache.
 ///
-/// [cacheKey] 用于去重，由配置解析时根据 source + type + index + id 生成，
-/// 确保同一广告位配置多个 ID 时不会重复缓存同一个广告。
-class PlacementAdSlot {
+/// Replaces the old [PlacementAdSlot] with nullable-everything pattern.
+/// Use pattern matching or `switch` to handle each state exhaustively.
+///
+/// ---
+/// 广告缓存槽位的 Sealed 状态层级，替代旧的 nullable-everything 模式。
+/// 使用模式匹配或 `switch` 穷尽处理每种状态。
+sealed class AdSlotState {
   final PlacementType placement;
 
-  /// 原始广告对象（AdMob Ad / MAX Ad 等，类型抹平为 Object）
-  final Object? ad;
-  final AdSource? loadedSource;
-  final AdType? loadedType;
-  final String? adUnitId;
+  const AdSlotState({required this.placement});
+}
 
-  /// 唯一标识，用于防止重复缓存
+/// A successfully loaded and cached ad slot.
+class AdSlotLoaded extends AdSlotState {
+  final Object ad;
+  final AdSource source;
+  final AdType type;
+  final String adUnitId;
+  final String cacheKey;
+  final DateTime loadedAt;
+  final AdAttribution? attribution;
+
+  AdSlotLoaded({
+    required super.placement,
+    required this.ad,
+    required this.source,
+    required this.type,
+    required this.adUnitId,
+    required this.cacheKey,
+    required this.loadedAt,
+    this.attribution,
+  });
+}
+
+/// A failed ad load attempt, recorded to track errors.
+class AdSlotFailed extends AdSlotState {
   final String? cacheKey;
-  final DateTime? loadedAt;
-  final NativeAdAttribution? nativeAttribution;
-  final bool isLoading;
-  final Object? lastError;
+  final Object? error;
 
-  const PlacementAdSlot({
-    required this.placement,
-    this.ad,
-    this.loadedSource,
-    this.loadedType,
-    this.adUnitId,
+  AdSlotFailed({
+    required super.placement,
     this.cacheKey,
-    this.loadedAt,
-    this.nativeAttribution,
-    this.isLoading = false,
-    this.lastError,
+    this.error,
   });
-
-  bool get hasAd => ad != null;
 }
 
-/// 广告缓存池，一个 placement 可以缓存多个广告。
-///
-/// 当 JSON 中一个 placement 通过 id/id2/ids 配置了多个广告单元 ID 时，
-/// [slots] 会包含对应的多个 [PlacementAdSlot]。
-class PlacementAdPool {
-  final PlacementType placement;
-  final List<PlacementAdSlot> slots;
-  final bool isLoading;
-  final Object? lastError;
-
-  const PlacementAdPool({
-    required this.placement,
-    this.slots = const [],
-    this.isLoading = false,
-    this.lastError,
-  });
-
-  bool get hasAd => slots.isNotEmpty;
-  int get count => slots.length;
-  Object? get firstAd => slots.isEmpty ? null : slots.first.ad;
-
-  List<Object> get ads =>
-      slots.map((slot) => slot.ad).whereType<Object>().toList();
-}
-
-/// 广告加载结果。
+/// Ad load result returned by [AdTypeAdapter.load].
 class AdLoadResult<TAd extends Object> {
   final TAd? ad;
   final AdType type;
@@ -95,20 +91,15 @@ class AdLoadResult<TAd extends Object> {
   bool get isSuccess => ad != null;
 }
 
-/// 广告展示结果。
-///
-/// [shown] 表示是否成功展示。
+/// Ad show result returned by [AdTypeAdapter.show].
 class AdShowResult {
   final bool shown;
   final Object? error;
 
   const AdShowResult({required this.shown, this.error});
 
-  factory AdShowResult.success() {
-    return const AdShowResult(shown: true);
-  }
+  factory AdShowResult.success() => const AdShowResult(shown: true);
 
-  factory AdShowResult.failure([Object? error]) {
-    return AdShowResult(shown: false, error: error);
-  }
+  factory AdShowResult.failure([Object? error]) =>
+      AdShowResult(shown: false, error: error);
 }

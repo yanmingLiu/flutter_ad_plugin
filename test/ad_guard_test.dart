@@ -1,5 +1,6 @@
 import 'package:flutter_ad_plugin/src/core/ad_config.dart';
 import 'package:flutter_ad_plugin/src/core/ad_enums.dart';
+import 'package:flutter_ad_plugin/src/core/ad_policy.dart';
 import 'package:flutter_ad_plugin/src/engine/ad_guard.dart';
 import 'package:flutter_test/flutter_test.dart';
 

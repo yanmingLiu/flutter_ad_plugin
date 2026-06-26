@@ -1,5 +1,7 @@
 import 'dart:convert';
+
 import 'ad_enums.dart';
+import 'ad_policy.dart';
 
 /// 广告配置的运行时模型，由 [AdConfigParser] 从 JSON 解析生成。
 ///
@@ -107,58 +109,6 @@ class AdUnitConfig {
   }) : cacheKey = cacheKey ?? id;
 
   bool get isValid => id.isNotEmpty;
-}
-
-class PlacementPolicy {
-  final bool isFullscreen;
-  final bool applySamePlacementCd;
-  final bool applyDifferentPlacementCd;
-  final bool contributesToGlobalCooldown;
-  final bool showNotReadyToast;
-  final bool waitForLoadOnShow;
-  final bool preferHighValueOnShow;
-  final String? notReadyMsg;
-  final Set<AdType>? allowedTypes;
-
-  const PlacementPolicy({
-    required this.isFullscreen,
-    required this.applySamePlacementCd,
-    required this.applyDifferentPlacementCd,
-    required this.contributesToGlobalCooldown,
-    required this.showNotReadyToast,
-    required this.waitForLoadOnShow,
-    required this.preferHighValueOnShow,
-    this.notReadyMsg,
-    this.allowedTypes,
-  });
-
-  factory PlacementPolicy.defaultPolicy(
-    AdConfig config,
-    PlacementType placement,
-  ) {
-    return PlacementPolicy(
-      isFullscreen: config
-          .getUnits(placement)
-          .any((unit) => unit.type.isFullscreen),
-      applySamePlacementCd: false,
-      applyDifferentPlacementCd: false,
-      contributesToGlobalCooldown: false,
-      showNotReadyToast: false,
-      waitForLoadOnShow: placement.name != 'open',
-      preferHighValueOnShow: placement.name != 'open',
-    );
-  }
-
-  bool supports(AdType type) {
-    if (allowedTypes != null) {
-      return allowedTypes!.contains(type);
-    }
-    if (isFullscreen) {
-      return type.isFullscreen || type.isNative;
-    } else {
-      return type.isNative;
-    }
-  }
 }
 
 class AdConfigParser {

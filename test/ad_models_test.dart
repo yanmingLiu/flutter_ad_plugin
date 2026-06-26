@@ -3,136 +3,73 @@ import 'package:flutter_ad_plugin/src/core/ad_models.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  group('PlacementAdSlot', () {
-    test('hasAd returns true when ad is not null', () {
-      const slot = PlacementAdSlot(
-        placement: PlacementType('home'),
-        ad: 'mock_ad_object',
-      );
-      expect(slot.hasAd, isTrue);
-    });
-
-    test('hasAd returns false when ad is null', () {
-      const slot = PlacementAdSlot(
-        placement: PlacementType('home'),
-        ad: null,
-      );
-      expect(slot.hasAd, isFalse);
-    });
-
-    test('all fields are stored correctly', () {
-      const slot = PlacementAdSlot(
-        placement: PlacementType('home'),
+  group('AdSlotLoaded', () {
+    test('stores all fields correctly', () {
+      final slot = AdSlotLoaded(
+        placement: const PlacementType('home'),
         ad: 'ad_ref',
-        loadedSource: AdSource.admob,
-        loadedType: AdType.interstitial,
+        source: AdSource.admob,
+        type: AdType.interstitial,
         adUnitId: 'unit-123',
         cacheKey: 'key-abc',
-        loadedAt: null,
-        isLoading: true,
-        lastError: 'load_error',
+        loadedAt: DateTime(2025),
       );
-      expect(slot.placement, const PlacementType('home'));
+      expect(slot.placement.name, 'home');
       expect(slot.ad, 'ad_ref');
-      expect(slot.loadedSource, AdSource.admob);
-      expect(slot.loadedType, AdType.interstitial);
+      expect(slot.source, AdSource.admob);
+      expect(slot.type, AdType.interstitial);
       expect(slot.adUnitId, 'unit-123');
       expect(slot.cacheKey, 'key-abc');
-      expect(slot.isLoading, isTrue);
-      expect(slot.lastError, 'load_error');
     });
 
-    test('default isLoading is false', () {
-      const slot = PlacementAdSlot(
-        placement: PlacementType('home'),
+    test('attribution is optional', () {
+      final slot = AdSlotLoaded(
+        placement: const PlacementType('home'),
+        ad: 'ad_ref',
+        source: AdSource.admob,
+        type: AdType.native,
+        adUnitId: 'unit-1',
+        cacheKey: 'key-1',
+        loadedAt: DateTime(2025),
       );
-      expect(slot.isLoading, isFalse);
+      expect(slot.attribution, isNull);
+    });
+
+    test('sealed class type checking works', () {
+      final slot = AdSlotLoaded(
+        placement: const PlacementType('home'),
+        ad: 'ad_ref',
+        source: AdSource.admob,
+        type: AdType.native,
+        adUnitId: 'unit-1',
+        cacheKey: 'key-1',
+        loadedAt: DateTime(2025),
+      );
+      expect(slot, isA<AdSlotLoaded>());
+      expect(slot, isA<AdSlotState>());
     });
   });
 
-  group('PlacementAdPool', () {
-    test('hasAd returns false for empty slots', () {
-      const pool = PlacementAdPool(
-        placement: PlacementType('home'),
-        slots: [],
+  group('AdSlotFailed', () {
+    test('stores error info', () {
+      final slot = AdSlotFailed(
+        placement: const PlacementType('home'),
+        cacheKey: 'key-abc',
+        error: 'timeout',
       );
-      expect(pool.hasAd, isFalse);
+      expect(slot.placement.name, 'home');
+      expect(slot.cacheKey, 'key-abc');
+      expect(slot.error, 'timeout');
+      expect(slot, isA<AdSlotFailed>());
+      expect(slot, isA<AdSlotState>());
     });
 
-    test('hasAd returns true when slots are not empty', () {
-      const pool = PlacementAdPool(
-        placement: PlacementType('home'),
-        slots: [
-          PlacementAdSlot(
-            placement: PlacementType('home'),
-            ad: 'ad1',
-          ),
-        ],
+    test('error and cacheKey are optional', () {
+      final slot = AdSlotFailed(
+        placement: const PlacementType('home'),
       );
-      expect(pool.hasAd, isTrue);
-    });
-
-    test('count returns number of slots', () {
-      const pool = PlacementAdPool(
-        placement: PlacementType('home'),
-        slots: [
-          PlacementAdSlot(placement: PlacementType('home'), ad: 'ad1'),
-          PlacementAdSlot(placement: PlacementType('home'), ad: 'ad2'),
-          PlacementAdSlot(placement: PlacementType('home'), ad: 'ad3'),
-        ],
-      );
-      expect(pool.count, 3);
-    });
-
-    test('firstAd returns first slot ad', () {
-      const pool = PlacementAdPool(
-        placement: PlacementType('home'),
-        slots: [
-          PlacementAdSlot(placement: PlacementType('home'), ad: 'first'),
-          PlacementAdSlot(placement: PlacementType('home'), ad: 'second'),
-        ],
-      );
-      expect(pool.firstAd, 'first');
-    });
-
-    test('firstAd returns null for empty pool', () {
-      const pool = PlacementAdPool(
-        placement: PlacementType('home'),
-        slots: [],
-      );
-      expect(pool.firstAd, isNull);
-    });
-
-    test('ads returns all ad objects filtering nulls', () {
-      const pool = PlacementAdPool(
-        placement: PlacementType('home'),
-        slots: [
-          PlacementAdSlot(placement: PlacementType('home'), ad: 'ad1'),
-          PlacementAdSlot(placement: PlacementType('home'), ad: null),
-          PlacementAdSlot(placement: PlacementType('home'), ad: 'ad3'),
-        ],
-      );
-      final ads = pool.ads;
-      expect(ads, hasLength(2));
-      expect(ads, ['ad1', 'ad3']);
-    });
-
-    test('ads returns empty list when pool is empty', () {
-      const pool = PlacementAdPool(
-        placement: PlacementType('home'),
-        slots: [],
-      );
-      expect(pool.ads, isEmpty);
-    });
-
-    test('default slots is empty list', () {
-      const pool = PlacementAdPool(placement: PlacementType('home'));
-      expect(pool.slots, isEmpty);
-    });
-
-    test('default isLoading is false', () {
-      const pool = PlacementAdPool(placement: PlacementType('home'));
-      expect(pool.isLoading, isFalse);
+      expect(slot.error, isNull);
+      expect(slot.cacheKey, isNull);
     });
   });
 
@@ -176,36 +113,22 @@ void main() {
       expect(result.shown, isFalse);
       expect(result.error, isNotNull);
     });
-
-    test('failure without error defaults error to null', () {
-      final result = AdShowResult.failure();
-      expect(result.shown, isFalse);
-      expect(result.error, isNull);
-    });
   });
 
-  group('NativeAdAttribution', () {
+  group('AdAttribution', () {
     test('stores all attribution fields', () {
-      final attr = NativeAdAttribution(
+      final attr = AdAttribution(
         placement: const PlacementType('home'),
         placementLabel: 'inbox_top',
         eventName: 'first_load',
       );
-      expect(attr.placement, const PlacementType('home'));
+      expect(attr.placement.name, 'home');
       expect(attr.placementLabel, 'inbox_top');
       expect(attr.eventName, 'first_load');
     });
 
-    test('placementLabel is optional and defaults to null', () {
-      final attr = NativeAdAttribution(
-        placement: const PlacementType('home'),
-        eventName: 'cold_start',
-      );
-      expect(attr.placementLabel, isNull);
-    });
-
     test('fields are mutable', () {
-      final attr = NativeAdAttribution(
+      final attr = AdAttribution(
         placement: const PlacementType('open'),
         eventName: 'initial',
       );
@@ -213,7 +136,7 @@ void main() {
       attr.placementLabel = 'updated';
       attr.eventName = 'changed';
 
-      expect(attr.placement, const PlacementType('home'));
+      expect(attr.placement.name, 'home');
       expect(attr.placementLabel, 'updated');
       expect(attr.eventName, 'changed');
     });
