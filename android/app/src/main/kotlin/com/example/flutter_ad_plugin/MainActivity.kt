@@ -13,14 +13,21 @@ import io.flutter.plugins.googlemobileads.GoogleMobileAdsPlugin
 class MainActivity : FlutterActivity() {
     private val facebookChannel = "facebook_sdk_init"
     private var homeNativeAdFactory: HomeNativeAdFactory? = null
+    private var fullScreenNativeAdFactory: FullScreenNativeAdFactory? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
         homeNativeAdFactory = HomeNativeAdFactory(this)
+        fullScreenNativeAdFactory = FullScreenNativeAdFactory(this)
         GoogleMobileAdsPlugin.registerNativeAdFactory(
             flutterEngine,
             "homeListTile",
             homeNativeAdFactory
+        )
+        GoogleMobileAdsPlugin.registerNativeAdFactory(
+            flutterEngine,
+            "fullScreenNative",
+            fullScreenNativeAdFactory
         )
         MethodChannel(
             flutterEngine.dartExecutor.binaryMessenger,
@@ -98,7 +105,9 @@ class MainActivity : FlutterActivity() {
 
     override fun cleanUpFlutterEngine(flutterEngine: FlutterEngine) {
         GoogleMobileAdsPlugin.unregisterNativeAdFactory(flutterEngine, "homeListTile")
+        GoogleMobileAdsPlugin.unregisterNativeAdFactory(flutterEngine, "fullScreenNative")
         homeNativeAdFactory = null
+        fullScreenNativeAdFactory = null
         super.cleanUpFlutterEngine(flutterEngine)
     }
 }

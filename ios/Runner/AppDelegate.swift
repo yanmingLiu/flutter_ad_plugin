@@ -5,6 +5,7 @@ import UIKit
 @main
 @objc class AppDelegate: FlutterAppDelegate {
   private var homeNativeAdFactory: HomeNativeAdFactory?
+  private var fullScreenNativeAdFactory: FullScreenNativeAdFactory?
 
   override func application(
     _ application: UIApplication,
@@ -13,10 +14,17 @@ import UIKit
     GeneratedPluginRegistrant.register(with: self)
     let factory = HomeNativeAdFactory()
     homeNativeAdFactory = factory
+    let fullScreenFactory = FullScreenNativeAdFactory()
+    fullScreenNativeAdFactory = fullScreenFactory
     FLTGoogleMobileAdsPlugin.registerNativeAdFactory(
       self,
       factoryId: "homeListTile",
       nativeAdFactory: factory
+    )
+    FLTGoogleMobileAdsPlugin.registerNativeAdFactory(
+      self,
+      factoryId: "fullScreenNative",
+      nativeAdFactory: fullScreenFactory
     )
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
   }
@@ -25,6 +33,10 @@ import UIKit
     FLTGoogleMobileAdsPlugin.unregisterNativeAdFactory(
       self,
       factoryId: "homeListTile"
+    )
+    FLTGoogleMobileAdsPlugin.unregisterNativeAdFactory(
+      self,
+      factoryId: "fullScreenNative"
     )
   }
 }

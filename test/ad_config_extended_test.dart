@@ -224,6 +224,45 @@ void main() {
       expect(config.cacheSizeFor(const PlacementType('mixed')), 3);
     });
 
+    test(
+      'fullscreenCacheSizeFor includes native for fullscreen policy',
+      () async {
+        final repo = DefaultAdConfigRepository(
+          placementPolicies: {
+            const PlacementType('fullscreen_native'): PlacementPolicy(
+              isFullscreen: true,
+              applySamePlacementCd: false,
+              applyDifferentPlacementCd: false,
+              contributesToGlobalCooldown: false,
+              showNotReadyToast: true,
+              waitForLoadOnShow: true,
+              preferHighValueOnShow: false,
+              allowedTypes: {AdType.native},
+            ),
+          },
+          localConfig: {
+            'fullscreen_native': [
+              {
+                'source': 'admob',
+                'weight': 1,
+                'type': 'native',
+                'id': 'n1',
+                'id2': 'n2',
+              },
+            ],
+          },
+        );
+
+        final config = await repo.getConfig();
+        expect(
+          config.fullscreenCacheSizeFor(
+            const PlacementType('fullscreen_native'),
+          ),
+          2,
+        );
+      },
+    );
+
     test('hasPlacement returns true only for configured placements', () {
       final config = AdConfigParser().parse({
         'open': [

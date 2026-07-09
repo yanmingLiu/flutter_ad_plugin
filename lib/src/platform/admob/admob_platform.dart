@@ -8,6 +8,7 @@ import '../../core/ad_enums.dart';
 import '../../core/ad_models.dart';
 import '../../utils/ad_logger.dart';
 import '../../utils/cancellation_token.dart';
+import '../../ui/fullscreen_native_ad_dialog.dart';
 import '../ad_adapter.dart';
 import '../ad_callback.dart';
 import '../ad_loader_mixin.dart';
@@ -100,7 +101,11 @@ abstract class _AdmobFullscreenAdapter<TAd extends AdWithoutView>
     fullscreenAd.onPaidEvent = (ad, valueMicros, precision, currencyCode) {
       onCallback?.call(
         AdPaidCallback(
-            ad, valueMicros, currencyCode, _networkName(fullscreenAd)),
+          ad,
+          valueMicros,
+          currencyCode,
+          _networkName(fullscreenAd),
+        ),
       );
     };
 
@@ -117,7 +122,12 @@ abstract class _AdmobFullscreenAdapter<TAd extends AdWithoutView>
             completer.complete(AdShowResult.failure(error));
           }
           onCallback?.call(
-            AdShowFailedCallback(ad, error.code, error.message, _networkName(ad)),
+            AdShowFailedCallback(
+              ad,
+              error.code,
+              error.message,
+              _networkName(ad),
+            ),
           );
         },
         onAdDismissedFullScreenContent: (ad) {
@@ -261,7 +271,12 @@ class AdmobRewardedAdapter extends _AdmobFullscreenAdapter<RewardedAd> {
 ///
 /// No longer maintains static attribution maps. Attribution is managed by
 /// the engine's [AdCacheService]. Emits [AdRawCallback] via [onCallback].
-class AdmobNativeAdapter implements AdTypeAdapter {
+class AdmobNativeAdapter implements AdTypeAdapter, NativeAdClickTracker {
+  static const _fullScreenFactoryId = 'fullScreenNative';
+
+  final Map<NativeAd, _NativeAdContext> _contexts = {};
+  final Map<NativeAd, Set<VoidCallback>> _clickListeners = {};
+
   @override
   AdSource get source => AdSource.admob;
 
@@ -297,63 +312,100 @@ class AdmobNativeAdapter implements AdTypeAdapter {
       }
     });
 
-    final templateType = unit.templateType?.toLowerCase() == 'small'
-        ? TemplateType.small
-        : TemplateType.medium;
-
-    final ad = NativeAd(
-      adUnitId: unit.id,
-      nativeTemplateStyle: NativeTemplateStyle(templateType: templateType),
-      request: const AdRequest(),
-      listener: NativeAdListener(
-        onAdLoaded: (ad) {
-          final nativeAd = ad as NativeAd;
-          if (!completer.isCompleted) {
-            completer.complete(
-              AdLoadResult.success(ad: nativeAd, type: type, adUnitId: unit.id),
-            );
-            return;
-          }
-          if (onLateAdLoaded != null) {
-            onLateAdLoaded(nativeAd, type, unit.id);
-          } else {
-            nativeAd.dispose();
-          }
-        },
-        onAdFailedToLoad: (ad, error) {
-          log.v(
-            '❌ [adapter_load] failed: source=${source.name} type=${type.name} '
-            'placement=${placement.name} id=${unit.id} code=${error.code} '
-            'message=${error.message}',
+    final adContext = _NativeAdContext();
+    late final NativeAd ad;
+    final listener = NativeAdListener(
+      onAdLoaded: (ad) {
+        final nativeAd = ad as NativeAd;
+        if (!completer.isCompleted) {
+          completer.complete(
+            AdLoadResult.success(ad: nativeAd, type: type, adUnitId: unit.id),
           );
-          ad.dispose();
-          if (!completer.isCompleted) {
-            completer.complete(
-              AdLoadResult.failure(type: type, adUnitId: unit.id, error: error),
-            );
+          return;
+        }
+        if (onLateAdLoaded != null) {
+          onLateAdLoaded(nativeAd, type, unit.id);
+        } else {
+          _contexts.remove(nativeAd);
+          _clickListeners.remove(nativeAd);
+          nativeAd.dispose();
+        }
+      },
+      onAdFailedToLoad: (ad, error) {
+        log.v(
+          '❌ [adapter_load] failed: source=${source.name} type=${type.name} '
+          'placement=${placement.name} id=${unit.id} code=${error.code} '
+          'message=${error.message}',
+        );
+        if (ad is NativeAd) {
+          _contexts.remove(ad);
+          _clickListeners.remove(ad);
+        }
+        ad.dispose();
+        if (!completer.isCompleted) {
+          completer.complete(
+            AdLoadResult.failure(type: type, adUnitId: unit.id, error: error),
+          );
+        }
+      },
+      onAdClicked: (ad) {
+        if (ad is NativeAd) {
+          final context = _contexts.putIfAbsent(ad, _NativeAdContext.new);
+          context.clicked = true;
+          final listeners = _clickListeners[ad];
+          if (listeners != null) {
+            for (final listener in List<VoidCallback>.of(listeners)) {
+              listener();
+            }
           }
-        },
-        onAdClicked: (ad) {
-          onCallback?.call(AdClickedCallback(ad, _nativeNetworkName(ad)));
-        },
-        onAdImpression: (ad) {
-          onCallback?.call(
-            AdImpressionCallback(ad, _nativeNetworkName(ad)),
-          );
-        },
-        onPaidEvent: (ad, valueMicros, precision, currencyCode) {
-          onCallback?.call(
-            AdPaidCallback(
-              ad,
-              valueMicros,
-              currencyCode,
-              _nativeNetworkName(ad),
-            ),
-          );
-        },
-      ),
+        }
+        onCallback?.call(AdClickedCallback(ad, _nativeNetworkName(ad)));
+      },
+      onAdImpression: (ad) {
+        onCallback?.call(AdImpressionCallback(ad, _nativeNetworkName(ad)));
+      },
+      onPaidEvent: (ad, valueMicros, precision, currencyCode) {
+        onCallback?.call(
+          AdPaidCallback(ad, valueMicros, currencyCode, _nativeNetworkName(ad)),
+        );
+      },
     );
-    await ad.load();
+
+    if (renderAsFullscreen) {
+      ad = NativeAd(
+        adUnitId: unit.id,
+        factoryId: _fullScreenFactoryId,
+        nativeAdOptions: NativeAdOptions(
+          adChoicesPlacement: AdChoicesPlacement.topLeftCorner,
+        ),
+        request: const AdRequest(),
+        listener: listener,
+      );
+    } else {
+      final templateType = unit.templateType?.toLowerCase() == 'small'
+          ? TemplateType.small
+          : TemplateType.medium;
+
+      ad = NativeAd(
+        adUnitId: unit.id,
+        nativeTemplateStyle: NativeTemplateStyle(templateType: templateType),
+        request: const AdRequest(),
+        listener: listener,
+      );
+    }
+    _contexts[ad] = adContext;
+    try {
+      await ad.load();
+    } catch (error) {
+      _contexts.remove(ad);
+      _clickListeners.remove(ad);
+      ad.dispose();
+      if (!completer.isCompleted) {
+        completer.complete(
+          AdLoadResult.failure(type: type, adUnitId: unit.id, error: error),
+        );
+      }
+    }
     return completer.future.whenComplete(timer.cancel);
   }
 
@@ -376,9 +428,43 @@ class AdmobNativeAdapter implements AdTypeAdapter {
   @override
   void dispose(Object ad) {
     if (ad is NativeAd) {
+      _contexts.remove(ad);
+      _clickListeners.remove(ad);
       ad.dispose();
     }
   }
+
+  @override
+  bool hasClicked(Object ad) {
+    return ad is NativeAd && (_contexts[ad]?.clicked ?? false);
+  }
+
+  @override
+  void addClickListener(Object ad, VoidCallback listener) {
+    if (ad is! NativeAd) {
+      return;
+    }
+    _clickListeners.putIfAbsent(ad, () => <VoidCallback>{}).add(listener);
+  }
+
+  @override
+  void removeClickListener(Object ad, VoidCallback listener) {
+    if (ad is! NativeAd) {
+      return;
+    }
+    final listeners = _clickListeners[ad];
+    if (listeners == null) {
+      return;
+    }
+    listeners.remove(listener);
+    if (listeners.isEmpty) {
+      _clickListeners.remove(ad);
+    }
+  }
+}
+
+class _NativeAdContext {
+  bool clicked = false;
 }
 
 /// AdMob Banner 广告适配器。

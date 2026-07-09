@@ -479,6 +479,58 @@ final ads = adPlugin.getNativeAds(
 
 如果宿主要自定义原生 UI，则需要在宿主 Android / iOS 工程注册对应 `NativeAdFactory`，并在适配器中使用匹配的 factoryId。
 
+全屏原生广告：
+
+```json
+{
+  "fullscreen_native": [
+    {
+      "source": "admob",
+      "weight": 1,
+      "type": "native",
+      "id": "ca-app-pub-3940256099942544/1044960115"
+    }
+  ]
+}
+```
+
+```dart
+const fullscreenNativePlacement = PlacementType('fullscreen_native');
+
+final plugin = AdPlugin(
+  config: AdPluginConfig(
+    configRepository: repo,
+    eventReporter: reporter,
+    placementPolicies: {
+      fullscreenNativePlacement: const PlacementPolicy(
+        isFullscreen: true,
+        applySamePlacementCd: false,
+        applyDifferentPlacementCd: false,
+        contributesToGlobalCooldown: false,
+        showNotReadyToast: true,
+        waitForLoadOnShow: true,
+        preferHighValueOnShow: false,
+        allowedTypes: {AdType.native},
+      ),
+    },
+    nativeAdCloseClickPercent: 0,
+  ),
+);
+
+await plugin.preload(
+  fullscreenNativePlacement,
+  eventName: 'fullscreen_native_preload',
+);
+
+await plugin.show(
+  fullscreenNativePlacement,
+  context: context,
+  eventName: 'fullscreen_native_show',
+);
+```
+
+全屏原生广告使用 Flutter 内置 `showGeneralDialog` 展示，因此 `show()` 必须传入 `BuildContext`。插件会通过原生 plugin 自动注册 `factoryId: "fullScreenNative"`，AdMob 加载时使用该 factory 渲染完整全屏原生 UI。修改原生注册后需要重新构建宿主 App，仅 hot restart 不会刷新原生注册。
+
 ### 9. 常见问题
 
 #### 为什么新增广告位不用改 Dart 代码？

@@ -8,6 +8,7 @@ import '../core/ad_models.dart';
 import '../core/ad_policy.dart';
 import '../platform/ad_callback.dart';
 import '../platform/ad_registry.dart';
+import '../ui/fullscreen_native_ad_dialog.dart';
 import '../utils/ad_logger.dart';
 import '../utils/ad_reporter.dart';
 import 'ad_cache_service.dart';
@@ -105,9 +106,11 @@ class AdPresenter {
     );
 
     if (slot == null) {
+      final lastError = _cache.lastErrorFor(showPlacement);
       log.v(
         '❌ [show] failed: reason=no_cache '
-        'request=${placement.name} show=${showPlacement.name}',
+        'request=${placement.name} show=${showPlacement.name} '
+        'lastError=$lastError',
       );
       _reportShowFail(
         placement: showPlacement,
@@ -122,8 +125,7 @@ class AdPresenter {
             showPlacement: showPlacement,
             placementLabel: placementLabel,
             eventName: eventName,
-            message: policy.notReadyMsg ??
-                'The ad is not ready, please try again later.',
+            message: _notReadyMessage(policy, lastError),
           ),
         );
       }
@@ -134,6 +136,7 @@ class AdPresenter {
       slot: slot,
       showPlacement: showPlacement,
       policy: policy,
+      // ignore: use_build_context_synchronously
       context: context,
       placementLabel: placementLabel,
       eventName: eventName,
@@ -166,6 +169,7 @@ class AdPresenter {
       preferHighValue: showPlacement != placement,
     );
     if (firstSlot == null) {
+      final lastError = _cache.lastErrorFor(showPlacement);
       _reportShowFail(
         placement: showPlacement,
         placementLabel: placementLabel,
@@ -179,8 +183,7 @@ class AdPresenter {
             showPlacement: showPlacement,
             placementLabel: placementLabel,
             eventName: eventName,
-            message: policy.notReadyMsg ??
-                'The ad is not ready, please try again later.',
+            message: _notReadyMessage(policy, lastError),
           ),
         );
       }
@@ -199,14 +202,12 @@ class AdPresenter {
         '📥 [show_sequence] missing second slot: '
         'placement=${showPlacement.name} event=$eventName',
       );
-      final refillFuture = _loader.preload(
-        showPlacement,
-        eventName: eventName,
-      );
+      final refillFuture = _loader.preload(showPlacement, eventName: eventName);
       final firstShown = await _showSlot(
         slot: firstSlot,
         showPlacement: showPlacement,
         policy: policy,
+        // ignore: use_build_context_synchronously
         context: context,
         placementLabel: placementLabel,
         eventName: eventName,
@@ -227,6 +228,7 @@ class AdPresenter {
         slot: refilledSlot,
         showPlacement: showPlacement,
         policy: policy,
+        // ignore: use_build_context_synchronously
         context: context,
         placementLabel: placementLabel,
         eventName: eventName,
@@ -240,6 +242,7 @@ class AdPresenter {
       slot: firstSlot,
       showPlacement: showPlacement,
       policy: policy,
+      // ignore: use_build_context_synchronously
       context: context,
       placementLabel: placementLabel,
       eventName: eventName,
@@ -252,12 +255,22 @@ class AdPresenter {
       slot: secondSlot,
       showPlacement: showPlacement,
       policy: policy,
+      // ignore: use_build_context_synchronously
       context: context,
       placementLabel: placementLabel,
       eventName: eventName,
       onAdShowed: onAdShowed,
       closePassThroughPercent: closePassThroughPercent,
     );
+  }
+
+  String _notReadyMessage(PlacementPolicy policy, Object? lastError) {
+    final base =
+        policy.notReadyMsg ?? 'The ad is not ready, please try again later.';
+    if (lastError == null) {
+      return base;
+    }
+    return '$base Last load error: $lastError';
   }
 
   // --- Native Retrieval ---
@@ -276,7 +289,11 @@ class AdPresenter {
       placementLabel: placementLabel,
       eventName: eventName,
     );
-    _reportRetrieval(slot, placementLabel: placementLabel, eventName: eventName);
+    _reportRetrieval(
+      slot,
+      placementLabel: placementLabel,
+      eventName: eventName,
+    );
     return slot.ad;
   }
 
@@ -294,7 +311,11 @@ class AdPresenter {
         placementLabel: placementLabel,
         eventName: eventName,
       );
-      _reportRetrieval(slot, placementLabel: placementLabel, eventName: eventName);
+      _reportRetrieval(
+        slot,
+        placementLabel: placementLabel,
+        eventName: eventName,
+      );
     }
     return slots.map((s) => s.ad).toList();
   }
@@ -319,7 +340,11 @@ class AdPresenter {
         placementLabel: placementLabel,
         eventName: eventName,
       );
-      _reportRetrieval(slot, placementLabel: placementLabel, eventName: eventName);
+      _reportRetrieval(
+        slot,
+        placementLabel: placementLabel,
+        eventName: eventName,
+      );
     }
     return slots.map((s) => s.ad).toList();
   }
@@ -368,8 +393,7 @@ class AdPresenter {
         excludedSlots,
       );
       final configuredFirst = _cache.firstSlot(showPlacement);
-      if (highValueSlot != null &&
-          !(configuredFirst?.type.isNative ?? false)) {
+      if (highValueSlot != null && !(configuredFirst?.type.isNative ?? false)) {
         return highValueSlot;
       }
     }
@@ -388,6 +412,12 @@ class AdPresenter {
     int? closePassThroughPercent,
   }) async {
     final adapter = _adapterRegistry.get(slot.source, slot.type);
+    final callback = _showCallback(
+      showPlacement: showPlacement,
+      placementLabel: placementLabel,
+      eventName: eventName,
+      slot: slot,
+    );
 
     _guard.markShowStarted(slot.placement, policy);
     _reportEvent(
@@ -399,6 +429,66 @@ class AdPresenter {
       placementLabel: placementLabel,
       eventName: eventName,
     );
+
+    if (slot.type == AdType.native && policy.isFullscreen) {
+      if (context == null) {
+        callback(AdShowFailedCallback(slot.ad, null, 'missing_context', null));
+        _guard.markShowFailed(slot.placement, policy);
+        _adapterRegistry.get(slot.source, slot.type).dispose(slot.ad);
+        _cache.removeSlot(slot.placement, slot);
+        return false;
+      }
+
+      final result = await adapter.show(
+        placement: showPlacement,
+        context: context,
+        placementLabel: placementLabel,
+        eventName: eventName,
+        ad: slot.ad,
+        onAdShowed: onAdShowed,
+        closePassThroughPercent: closePassThroughPercent ?? 0,
+        onCallback: callback,
+      );
+
+      if (!result.shown) {
+        log.v(
+          '❌ [show] failed: showPlacement=${showPlacement.name} '
+          'cachePlacement=${slot.placement.name} id=${slot.adUnitId} '
+          'error=${result.error}',
+        );
+        _guard.markShowFailed(slot.placement, policy);
+        _adapterRegistry.get(slot.source, slot.type).dispose(slot.ad);
+        _cache.removeSlot(slot.placement, slot);
+        return false;
+      }
+
+      final dialogShown = await FullscreenNativeAdDialog.show(
+        // ignore: use_build_context_synchronously
+        context: context,
+        placement: showPlacement,
+        placementLabel: placementLabel ?? showPlacement.name,
+        ad: slot.ad,
+        clickTracker: adapter is NativeAdClickTracker
+            ? adapter as NativeAdClickTracker
+            : null,
+        closePassThroughPercent: closePassThroughPercent ?? 0,
+        onClosed: () {
+          callback(AdClosedCallback(slot.ad, null));
+          _adapterRegistry.get(slot.source, slot.type).dispose(slot.ad);
+          _cache.removeSlot(slot.placement, slot);
+          unawaited(_loader.preload(slot.placement, eventName: eventName));
+        },
+      );
+
+      if (dialogShown) {
+        _guard.markShowCompleted(slot.placement, policy);
+        return true;
+      }
+
+      callback(AdShowFailedCallback(slot.ad, -1, 'dialog_exists', null));
+      _guard.markShowFailed(slot.placement, policy);
+      return false;
+    }
 
     final result = await adapter.show(
       placement: showPlacement,
@@ -412,12 +502,7 @@ class AdPresenter {
         unawaited(_loader.preload(slot.placement, eventName: eventName));
       },
       closePassThroughPercent: closePassThroughPercent ?? 0,
-      onCallback: _showCallback(
-        showPlacement: showPlacement,
-        placementLabel: placementLabel,
-        eventName: eventName,
-        slot: slot,
-      ),
+      onCallback: callback,
     );
 
     if (result.shown) {

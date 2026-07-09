@@ -10,6 +10,7 @@ import 'utils/ad_lifecycle.dart';
 const openPlacement = PlacementType('open');
 const homePlacement = PlacementType('home');
 const messagePlacement = PlacementType('message');
+const fullscreenNativePlacement = PlacementType('fullscreen_native');
 const playMiddlePlacement = PlacementType('play_middle');
 const levelHPlacement = PlacementType('level_h');
 const behaviorPlacement = PlacementType('behavior');
@@ -19,6 +20,7 @@ const inlineBannerPlacement = PlacementType('article_inline_banner');
 const coldStartPlacements = [
   homePlacement,
   messagePlacement,
+  fullscreenNativePlacement,
   playMiddlePlacement,
   levelHPlacement,
   bottomBannerPlacement,
@@ -97,9 +99,9 @@ class _LaunchGatePageState extends State<LaunchGatePage> {
     await adPlugin.show(openPlacement, eventName: 'open_cold');
 
     if (!mounted) return;
-    Navigator.of(context).pushReplacement(
-      MaterialPageRoute(builder: (_) => const DemoHomePage()),
-    );
+    Navigator.of(
+      context,
+    ).pushReplacement(MaterialPageRoute(builder: (_) => const DemoHomePage()));
   }
 
   @override
@@ -184,6 +186,7 @@ class _DemoHomePageState extends State<DemoHomePage> {
     });
     final shown = await adPlugin.show(
       p,
+      context: context,
       eventName: eventName ?? p.name,
       closePassThroughPercent: 0,
     );
@@ -202,24 +205,43 @@ class _DemoHomePageState extends State<DemoHomePage> {
       await adPlugin.loadNative(homePlacement, eventName: 'first_load');
       ad = adPlugin.getNativeAd(homePlacement, eventName: eventName);
     }
-    final ads = adPlugin.getNativeAds(homePlacement, count: 2, eventName: eventName);
-    if (mounted) setState(() { _nativeAd = ad; _nativeAds = ads; });
+    final ads = adPlugin.getNativeAds(
+      homePlacement,
+      count: 2,
+      eventName: eventName,
+    );
+    if (mounted) {
+      setState(() {
+        _nativeAd = ad;
+        _nativeAds = ads;
+      });
+    }
   }
 
   Future<void> _reloadNative() async {
     _toastMessage('正在加载原生广告...');
     await adPlugin.loadNative(homePlacement, eventName: 'manual_load');
     final ad = adPlugin.getNativeAd(homePlacement, eventName: 'home_show');
-    final ads = adPlugin.getNativeAds(homePlacement, count: 2, eventName: 'home_show');
+    final ads = adPlugin.getNativeAds(
+      homePlacement,
+      count: 2,
+      eventName: 'home_show',
+    );
     if (mounted) {
-      setState(() { _nativeAd = ad; _nativeAds = ads; });
+      setState(() {
+        _nativeAd = ad;
+        _nativeAds = ads;
+      });
       _toastMessage(ad != null ? '原生广告加载成功 ✓' : '加载失败 ✗');
     }
   }
 
   void _disposeNative() {
     adPlugin.disposeNativeAd(homePlacement);
-    setState(() { _nativeAd = null; _nativeAds = []; });
+    setState(() {
+      _nativeAd = null;
+      _nativeAds = [];
+    });
     _toastMessage('原生广告缓存已清除');
   }
 
@@ -231,12 +253,20 @@ class _DemoHomePageState extends State<DemoHomePage> {
       await adPlugin.loadBanner(bottomBannerPlacement, eventName: 'first_load');
       ad = adPlugin.getBannerAd(bottomBannerPlacement);
     }
-    if (mounted) setState(() { _bannerAd = ad; _bannerReady = ad != null; });
+    if (mounted) {
+      setState(() {
+        _bannerAd = ad;
+        _bannerReady = ad != null;
+      });
+    }
   }
 
   void _disposeBanner() {
     adPlugin.disposeBannerAd(bottomBannerPlacement);
-    setState(() { _bannerAd = null; _bannerReady = false; });
+    setState(() {
+      _bannerAd = null;
+      _bannerReady = false;
+    });
     _toastMessage('全局 Banner 已销毁');
   }
 
@@ -286,7 +316,10 @@ class _DemoHomePageState extends State<DemoHomePage> {
               _demoCard(
                 '开屏广告（冷启动回放）',
                 '模拟冷启动时展示开屏广告，展示 loading 过渡。',
-                onPress: () => _showFullscreen(openPlacement, eventName: 'open_cold_replay'),
+                onPress: () => _showFullscreen(
+                  openPlacement,
+                  eventName: 'open_cold_replay',
+                ),
                 label: '展示开屏',
                 status: _fsStatus,
                 loading: _showingFullscreen,
@@ -294,7 +327,10 @@ class _DemoHomePageState extends State<DemoHomePage> {
               _demoCard(
                 '开屏广告（热启动回放）',
                 '模拟 App 回到前台时触发。也可切后台再切回来测试。',
-                onPress: () => _showFullscreen(openPlacement, eventName: 'open_hot_replay'),
+                onPress: () => _showFullscreen(
+                  openPlacement,
+                  eventName: 'open_hot_replay',
+                ),
                 label: '展示热开屏',
                 status: _fsStatus,
                 loading: _showingFullscreen,
@@ -306,9 +342,19 @@ class _DemoHomePageState extends State<DemoHomePage> {
                 label: '展示插屏',
               ),
               _demoCard(
+                '全屏原生广告',
+                'fullscreen_native 广告位：使用 fullScreenNative factory 全屏展示 NativeAd。',
+                onPress: () => _showFullscreen(
+                  fullscreenNativePlacement,
+                  eventName: 'fullscreen_native_demo',
+                ),
+                label: '展示原生',
+              ),
+              _demoCard(
                 '激励广告（公共兜底）',
                 '"behavior2" 通过 common_placements 兜底为激励视频。',
-                onPress: () => _showFullscreen(behaviorPlacement, eventName: 'behavior'),
+                onPress: () =>
+                    _showFullscreen(behaviorPlacement, eventName: 'behavior'),
                 label: '展示激励视频',
               ),
               _demoCard(
@@ -316,13 +362,19 @@ class _DemoHomePageState extends State<DemoHomePage> {
                 '同一广告位缓存两个广告时逐个弹出；仅一个时自动补货再弹。',
                 onPress: () async {
                   if (_showingFullscreen) return;
-                  setState(() { _showingFullscreen = true; _fsStatus = 'showSequence 进行中...'; });
+                  setState(() {
+                    _showingFullscreen = true;
+                    _fsStatus = 'showSequence 进行中...';
+                  });
                   final ok = await adPlugin.showSequence(
                     playMiddlePlacement,
                     eventName: 'play_middle_demo',
                     closePassThroughPercent: 0,
                   );
-                  setState(() { _showingFullscreen = false; _fsStatus = ok ? 'showSequence 完成 ✓' : 'showSequence 失败 ✗'; });
+                  setState(() {
+                    _showingFullscreen = false;
+                    _fsStatus = ok ? 'showSequence 完成 ✓' : 'showSequence 失败 ✗';
+                  });
                 },
                 label: '连续展示',
               ),
@@ -336,7 +388,9 @@ class _DemoHomePageState extends State<DemoHomePage> {
               Text(
                 '插屏/激励/showSequence 依赖预加载的缓存广告。'
                 '缓存为空 + waitForLoadOnShow=true 时插件会即时加载后再展示。',
-                style: tt.bodySmall?.copyWith(color: Theme.of(context).colorScheme.outline),
+                style: tt.bodySmall?.copyWith(
+                  color: Theme.of(context).colorScheme.outline,
+                ),
               ),
 
               const SizedBox(height: 24),
@@ -350,12 +404,17 @@ class _DemoHomePageState extends State<DemoHomePage> {
                 '自动预加载 + 每 30 分钟自动刷新 + 跨页面持久。',
                 trailing: _bannerReady && _bannerAd != null
                     ? adPlugin.widgetFactory.bannerWidget(_bannerAd!)
-                    : const Text('Banner 未就绪', style: TextStyle(color: Colors.grey)),
+                    : const Text(
+                        'Banner 未就绪',
+                        style: TextStyle(color: Colors.grey),
+                      ),
                 onPress: _bannerReady
                     ? _disposeBanner
                     : () async {
                         await _initBannerAd();
-                        _toastMessage(_bannerAd != null ? 'Banner 加载成功 ✓' : 'Banner 加载失败 ✗');
+                        _toastMessage(
+                          _bannerAd != null ? 'Banner 加载成功 ✓' : 'Banner 加载失败 ✗',
+                        );
                       },
                 label: _bannerReady ? '销毁' : '加载',
                 status: '全局 Banner：每 30 分钟自动刷新',
@@ -372,7 +431,8 @@ class _DemoHomePageState extends State<DemoHomePage> {
                   ),
                 ),
                 label: '打开内联 Banner 页面',
-                status: 'initState → loadBanner → 展示 → dispose → disposeBannerAd',
+                status:
+                    'initState → loadBanner → 展示 → dispose → disposeBannerAd',
               ),
 
               const SizedBox(height: 24),
@@ -413,7 +473,10 @@ class _DemoHomePageState extends State<DemoHomePage> {
                 elevation: 4,
                 borderRadius: BorderRadius.circular(8),
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 12,
+                  ),
                   decoration: BoxDecoration(
                     color: Theme.of(context).colorScheme.inverseSurface,
                     borderRadius: BorderRadius.circular(8),
@@ -460,25 +523,30 @@ class _DemoHomePageState extends State<DemoHomePage> {
             Row(
               children: [
                 Expanded(
-                  child: Text(title, style: Theme.of(context).textTheme.labelLarge),
+                  child: Text(
+                    title,
+                    style: Theme.of(context).textTheme.labelLarge,
+                  ),
                 ),
                 if (onPress != null)
                   loading
                       ? const SizedBox(
-                          width: 24, height: 24,
+                          width: 24,
+                          height: 24,
                           child: CircularProgressIndicator(strokeWidth: 2),
                         )
                       : (destructive
-                          ? OutlinedButton(
-                              onPressed: onPress,
-                              style: OutlinedButton.styleFrom(foregroundColor: Colors.red),
-                              child: Text(label),
-                            )
-                          : FilledButton.tonal(
-                              onPressed: onPress,
-                              child: Text(label),
-                            )
-                        ),
+                            ? OutlinedButton(
+                                onPressed: onPress,
+                                style: OutlinedButton.styleFrom(
+                                  foregroundColor: Colors.red,
+                                ),
+                                child: Text(label),
+                              )
+                            : FilledButton.tonal(
+                                onPressed: onPress,
+                                child: Text(label),
+                              )),
               ],
             ),
             Text(description, style: Theme.of(context).textTheme.bodySmall),
@@ -488,7 +556,8 @@ class _DemoHomePageState extends State<DemoHomePage> {
             ],
             if (status != null) ...[
               const SizedBox(height: 4),
-              Text(status,
+              Text(
+                status,
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
                   color: Theme.of(context).colorScheme.outline,
                 ),
@@ -506,9 +575,7 @@ class _DemoHomePageState extends State<DemoHomePage> {
         _demoCard(
           '加载 / 刷新原生广告',
           '手动触发 preloadNative。缓存有广告后可点刷新重新加载。',
-          onPress: () => _nativeAd == null
-              ? _initNativeAd()
-              : _reloadNative(),
+          onPress: () => _nativeAd == null ? _initNativeAd() : _reloadNative(),
           label: _nativeAd == null ? '加载' : '刷新',
           status: _nativeAd != null
               ? '缓存池: ${_nativeAds.length} 个广告'
@@ -573,7 +640,11 @@ class _InlineBannerDemoPageState extends State<InlineBannerDemoPage> {
     await adPlugin.loadBanner(inlineBannerPlacement, eventName: 'article');
     if (!mounted) return;
     setState(() {
-      _ads = adPlugin.getBannerAds(inlineBannerPlacement, count: 2, eventName: 'article');
+      _ads = adPlugin.getBannerAds(
+        inlineBannerPlacement,
+        count: 2,
+        eventName: 'article',
+      );
       _loading = false;
     });
   }
@@ -613,7 +684,9 @@ class _InlineBannerDemoPageState extends State<InlineBannerDemoPage> {
                 height: 60,
                 alignment: Alignment.center,
                 decoration: BoxDecoration(
-                  border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
+                  border: Border.all(
+                    color: Theme.of(context).colorScheme.outlineVariant,
+                  ),
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: const Text('Banner 加载失败'),
@@ -627,7 +700,9 @@ class _InlineBannerDemoPageState extends State<InlineBannerDemoPage> {
                 margin: const EdgeInsets.only(bottom: 12),
                 padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
                 decoration: BoxDecoration(
-                  border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
+                  border: Border.all(
+                    color: Theme.of(context).colorScheme.outlineVariant,
+                  ),
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Column(

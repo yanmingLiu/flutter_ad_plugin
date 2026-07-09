@@ -42,6 +42,16 @@ class MyConfigRepository extends DefaultAdConfigRepository {
           'load_timeout': 15,
         },
       ],
+      'fullscreen_native': [
+        {
+          'source': 'admob',
+          'weight': 1,
+          'type': 'native',
+          'id': ids.native,
+          'id2': ids.nativeVideo,
+          'load_timeout': 15,
+        },
+      ],
       'behavior': [
         {
           'ad_source': 'admob',
@@ -100,7 +110,6 @@ class MyConfigRepository extends DefaultAdConfigRepository {
           'banner_mode': 'inline',
         },
       ],
-
     };
   }
 
@@ -127,6 +136,17 @@ Map<PlacementType, PlacementPolicy> buildPlacementPolicies() {
       waitForLoadOnShow: true,
       preferHighValueOnShow: true,
       notReadyMsg: 'Ad is still loading, please wait a moment.',
+    ),
+    const PlacementType('fullscreen_native'): PlacementPolicy(
+      isFullscreen: true,
+      applySamePlacementCd: false,
+      applyDifferentPlacementCd: false,
+      contributesToGlobalCooldown: false,
+      showNotReadyToast: true,
+      waitForLoadOnShow: true,
+      preferHighValueOnShow: false,
+      allowedTypes: {AdType.native},
+      notReadyMsg: 'Fullscreen native ad is still loading.',
     ),
   };
 }

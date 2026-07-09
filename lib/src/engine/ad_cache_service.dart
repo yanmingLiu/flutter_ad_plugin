@@ -41,6 +41,21 @@ class AdCacheService {
     return getSlots(placement).any((s) => s.cacheKey == cacheKey);
   }
 
+  /// Returns the latest load error preserved for [placement], if any.
+  Object? lastErrorFor(PlacementType placement) {
+    final slots = _cache[placement];
+    if (slots == null) {
+      return null;
+    }
+
+    for (final state in slots.reversed) {
+      if (state is AdSlotFailed) {
+        return state.error;
+      }
+    }
+    return null;
+  }
+
   /// Marks a placement as loading, preserving existing loaded slots.
   void beginLoading(PlacementType placement) {
     final existing = getSlots(placement);
@@ -76,9 +91,7 @@ class AdCacheService {
 
   /// Removes a specific loaded slot.
   void removeSlot(PlacementType placement, AdSlotLoaded slot) {
-    final kept = getSlots(placement)
-        .where((s) => s.ad != slot.ad)
-        .toList();
+    final kept = getSlots(placement).where((s) => s.ad != slot.ad).toList();
     _attributions.remove(slot.ad);
     commitSlots(placement, kept);
   }

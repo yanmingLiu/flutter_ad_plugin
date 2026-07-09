@@ -40,10 +40,19 @@ class AdConfig {
   }
 
   int fullscreenCacheSizeFor(PlacementType placement, {int minimum = 1}) {
+    final policy = getPolicy(placement);
+    final hasTraditionalFullscreen = getUnits(
+      placement,
+    ).any((unit) => unit.type.isFullscreen);
     return _cacheSizeFor(
       placement,
       minimum: minimum,
-      include: (unit) => unit.type.isFullscreen,
+      include: (unit) =>
+          unit.type.isFullscreen ||
+          (policy.isFullscreen &&
+              unit.type == AdType.native &&
+              (!hasTraditionalFullscreen ||
+                  (policy.allowedTypes?.contains(AdType.native) ?? false))),
     );
   }
 

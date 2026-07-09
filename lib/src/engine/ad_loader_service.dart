@@ -63,7 +63,7 @@ class AdLoaderService {
     final config = await _configRepo.getConfig();
     if (!config.hasPlacement(placement)) {
       var loaded = false;
-      for (final common in config.commonPlacements) {
+      for (final common in _configuredCommonPlacements(config, placement)) {
         loaded = await preload(common, eventName: eventName) || loaded;
       }
       return loaded;
@@ -92,7 +92,7 @@ class AdLoaderService {
     final config = await _configRepo.getConfig();
     if (!config.hasPlacement(placement)) {
       var loaded = false;
-      for (final common in config.commonPlacements) {
+      for (final common in _configuredCommonPlacements(config, placement)) {
         loaded = await preloadNative(common, eventName: eventName) || loaded;
       }
       return loaded;
@@ -148,14 +148,17 @@ class AdLoaderService {
       final policy = config.getPolicy(p);
       final units = config.getUnits(p);
 
-      if (units.any((u) =>
-          u.type.isFullscreen ||
-          (policy.isFullscreen && u.type == AdType.native))) {
+      if (units.any(
+        (u) =>
+            u.type.isFullscreen ||
+            (policy.isFullscreen && u.type == AdType.native),
+      )) {
         unawaited(preload(p, eventName: eventName));
       }
-      if (units.any((u) =>
-          u.type.isNative &&
-          (!policy.isFullscreen || u.type.isDoubleNative))) {
+      if (units.any(
+        (u) =>
+            u.type.isNative && (!policy.isFullscreen || u.type.isDoubleNative),
+      )) {
         unawaited(preloadNative(p, eventName: eventName));
       }
       if (units.any((u) => u.type.isBanner)) {
@@ -177,22 +180,35 @@ class AdLoaderService {
       targetCountFor: (c) => c.fullscreenCacheSizeFor(placement),
       unitFilter: (config) {
         final policy = config.getPolicy(placement);
+        final hasTraditionalFullscreen = config
+            .getUnits(placement)
+            .any((unit) => unit.type.isFullscreen);
         return config
             .getUnits(placement)
             .where((u) => u.isValid)
             .where((u) => policy.supports(u.type))
-            .where((u) =>
-                u.type.isFullscreen ||
-                (policy.isFullscreen && u.type == AdType.native))
+            .where(
+              (u) =>
+                  u.type.isFullscreen ||
+                  (policy.isFullscreen &&
+                      u.type == AdType.native &&
+                      (!hasTraditionalFullscreen ||
+                          (policy.allowedTypes?.contains(AdType.native) ??
+                              false))),
+            )
             .where((u) => !_cache.hasSlotWithKey(placement, u.cacheKey));
       },
       adapterTypeFor: (u) => u.type.isNative ? AdType.native : u.type,
       onUnitLoaded: (unit) {
-        _scheduleRefresh(placement, unit.refreshMinutes, 'fullscreen_$placement',
-            () async {
-          _cache.clear(placement);
-          unawaited(preload(placement, eventName: eventName));
-        });
+        _scheduleRefresh(
+          placement,
+          unit.refreshMinutes,
+          'fullscreen_$placement',
+          () async {
+            _cache.clear(placement);
+            unawaited(preload(placement, eventName: eventName));
+          },
+        );
       },
     );
   }
@@ -217,11 +233,15 @@ class AdLoaderService {
       },
       adapterTypeFor: (_) => AdType.native,
       onUnitLoaded: (unit) {
-        _scheduleRefresh(placement, unit.refreshMinutes, 'native_$placement',
-            () async {
-          _cache.clear(placement);
-          unawaited(preloadNative(placement, eventName: eventName));
-        });
+        _scheduleRefresh(
+          placement,
+          unit.refreshMinutes,
+          'native_$placement',
+          () async {
+            _cache.clear(placement);
+            unawaited(preloadNative(placement, eventName: eventName));
+          },
+        );
       },
     );
   }
@@ -251,11 +271,15 @@ class AdLoaderService {
       adapterTypeFor: (_) => AdType.banner,
       onUnitLoaded: isGlobal
           ? (unit) {
-              _scheduleRefresh(placement, unit.refreshMinutes,
-                  'banner_$placement', () async {
-                _cache.clear(placement);
-                unawaited(preloadBanner(placement, eventName: eventName));
-              });
+              _scheduleRefresh(
+                placement,
+                unit.refreshMinutes,
+                'banner_$placement',
+                () async {
+                  _cache.clear(placement);
+                  unawaited(preloadBanner(placement, eventName: eventName));
+                },
+              );
             }
           : null,
     );
@@ -316,8 +340,15 @@ class AdLoaderService {
         cancellationToken: ct,
         onCallback: _wrapCallback(placement, unit, eventName),
         onLateAdLoaded: (ad, type, adUnitId) {
-          _handleLateAd(placement, ad, type, adUnitId, unit.cacheKey,
-              unit.source, targetCount);
+          _handleLateAd(
+            placement,
+            ad,
+            type,
+            adUnitId,
+            unit.cacheKey,
+            unit.source,
+            targetCount,
+          );
         },
       );
 
@@ -433,6 +464,15 @@ class AdLoaderService {
   }
 
   // --- Helpers ---
+
+  Iterable<PlacementType> _configuredCommonPlacements(
+    AdConfig config,
+    PlacementType requested,
+  ) {
+    return config.commonPlacements.where(
+      (placement) => placement != requested && config.hasPlacement(placement),
+    );
+  }
 
   void _scheduleRefresh(
     PlacementType placement,

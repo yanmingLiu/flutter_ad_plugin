@@ -48,7 +48,10 @@ void main() {
     });
 
     test('hasSlotWithKey detects duplicate cache keys', () {
-      cache.addSlot(PlacementType('home'), _makeSlot('home', 'ad1', cacheKey: 'key1'));
+      cache.addSlot(
+        PlacementType('home'),
+        _makeSlot('home', 'ad1', cacheKey: 'key1'),
+      );
       expect(cache.hasSlotWithKey(PlacementType('home'), 'key1'), isTrue);
       expect(cache.hasSlotWithKey(PlacementType('home'), 'key2'), isFalse);
     });
@@ -141,6 +144,7 @@ void main() {
     test('commitSlots with lastError preserves error', () {
       cache.commitSlots(PlacementType('home'), [], lastError: 'load_error');
       expect(cache.hasSlot(PlacementType('home')), isFalse);
+      expect(cache.lastErrorFor(PlacementType('home')), 'load_error');
     });
 
     test('beginLoading preserves existing slots', () {

@@ -1,27 +1,29 @@
-allprojects {
-    repositories {
-        google()
-        mavenCentral()
-        maven {
-            url = uri("https://artifact.bytedance.com/repository/pangle/")
-        }
+group = "com.example.flutter_ad_plugin"
+version = "1.0-SNAPSHOT"
+
+plugins {
+    id("com.android.library")
+    id("kotlin-android")
+}
+
+android {
+    namespace = "com.example.flutter_ad_plugin"
+    compileSdk = flutter.compileSdkVersion
+
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
     }
-}
 
-val newBuildDir: Directory =
-    rootProject.layout.buildDirectory
-        .dir("../../build")
-        .get()
-rootProject.layout.buildDirectory.value(newBuildDir)
+    kotlinOptions {
+        jvmTarget = JavaVersion.VERSION_17.toString()
+    }
 
-subprojects {
-    val newSubprojectBuildDir: Directory = newBuildDir.dir(project.name)
-    project.layout.buildDirectory.value(newSubprojectBuildDir)
-}
-subprojects {
-    project.evaluationDependsOn(":app")
-}
+    sourceSets {
+        getByName("main").java.srcDirs("src/main/kotlin")
+    }
 
-tasks.register<Delete>("clean") {
-    delete(rootProject.layout.buildDirectory)
+    defaultConfig {
+        minSdk = flutter.minSdkVersion
+    }
 }
