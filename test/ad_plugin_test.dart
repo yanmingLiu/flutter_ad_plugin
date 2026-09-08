@@ -6,7 +6,6 @@ import 'package:flutter_ad_plugin/src/core/ad_models.dart';
 import 'package:flutter_ad_plugin/src/platform/ad_callback.dart';
 import 'package:flutter_ad_plugin/src/platform/ad_adapter.dart';
 import 'package:flutter_ad_plugin/src/platform/ad_registry.dart';
-import 'package:flutter_ad_plugin/src/ui/fullscreen_native_ad_dialog.dart';
 import 'package:flutter_ad_plugin/src/utils/cancellation_token.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -16,6 +15,35 @@ class _MockSdkInitializer implements AdSourceSdkInitializer {
 
   @override
   Future<void> init() async {}
+}
+
+class _GatedSdkInitializer implements AdSourceSdkInitializer {
+  _GatedSdkInitializer(this.gate);
+
+  final Completer<void> gate;
+  int initCount = 0;
+
+  @override
+  AdSource get source => AdSource.admob;
+
+  @override
+  Future<void> init() async {
+    initCount++;
+    await gate.future;
+  }
+}
+
+class _FailOnceSdkInitializer implements AdSourceSdkInitializer {
+  int initCount = 0;
+
+  @override
+  AdSource get source => AdSource.admob;
+
+  @override
+  Future<void> init() async {
+    initCount++;
+    if (initCount == 1) throw StateError('first init failed');
+  }
 }
 
 class _TestConfigRepo extends Fake implements AdConfigRepository {
@@ -241,6 +269,52 @@ void main() {
       expect(plugin.isInitialized, isTrue);
     });
 
+    test('concurrent init shares one initialization', () async {
+      final gate = Completer<void>();
+      final initializer = _GatedSdkInitializer(gate);
+      final concurrentPlugin = AdPlugin(
+        config: AdPluginConfig(
+          configRepository: configRepo,
+          eventReporter: reporter,
+          sdkInitializers: [initializer],
+          adapters: [fullscreenAdapter, nativeAdapter],
+        ),
+      );
+
+      final first = concurrentPlugin.init();
+      final second = concurrentPlugin.init();
+      expect(initializer.initCount, 1);
+      gate.complete();
+      await Future.wait([first, second]);
+      expect(concurrentPlugin.isInitialized, isTrue);
+      await concurrentPlugin.dispose();
+    });
+
+    test('dispose before init is safe and prevents later init', () async {
+      await plugin.dispose();
+      await plugin.dispose();
+      await expectLater(plugin.init(), throwsStateError);
+    });
+
+    test('init can retry after a failed attempt', () async {
+      final initializer = _FailOnceSdkInitializer();
+      final retryPlugin = AdPlugin(
+        config: AdPluginConfig(
+          configRepository: configRepo,
+          eventReporter: reporter,
+          sdkInitializers: [initializer],
+          adapters: [fullscreenAdapter],
+        ),
+      );
+
+      await expectLater(retryPlugin.init(), throwsStateError);
+      await retryPlugin.init();
+
+      expect(initializer.initCount, 2);
+      expect(retryPlugin.isInitialized, isTrue);
+      await retryPlugin.dispose();
+    });
+
     test('throws when used before init', () {
       expect(
         () => plugin.preload(PlacementType('home'), eventName: 'test'),
@@ -270,6 +344,139 @@ void main() {
         eventName: 'no_units',
       );
       expect(ok, isFalse);
+    });
+
+    test('missing adapter reports load failure without throwing', () async {
+      final unsupportedPlugin = AdPlugin(
+        config: AdPluginConfig(
+          configRepository: _TestConfigRepo({
+            'unsupported': [
+              {'source': 'max', 'type': 'interstitial', 'id': 'max-id'},
+            ],
+          }),
+          eventReporter: reporter,
+          sdkInitializers: [_MockSdkInitializer()],
+          adapters: [fullscreenAdapter],
+        ),
+      );
+      await unsupportedPlugin.init();
+
+      final loaded = await unsupportedPlugin.preload(
+        const PlacementType('unsupported'),
+        eventName: 'unsupported_load',
+      );
+
+      expect(loaded, isFalse);
+      expect(
+        reporter.events.any(
+          (event) =>
+              event.eventType == AdEventType.loadFailed &&
+              event.errorReason!.contains('No adapter registered'),
+        ),
+        isTrue,
+      );
+      await unsupportedPlugin.dispose();
+    });
+
+    test('native refill preserves an existing cached ad', () async {
+      final partialAdapter = _CountingAdapter(
+        source: AdSource.admob,
+        type: AdType.native,
+        failAtLoadCount: 2,
+      );
+      final refillPlugin = AdPlugin(
+        config: AdPluginConfig(
+          configRepository: _TestConfigRepo({
+            'home': [
+              {
+                'source': 'admob',
+                'type': 'native',
+                'ad_id': 'native-1',
+                'ad_id2': 'native-2',
+              },
+            ],
+          }),
+          eventReporter: reporter,
+          sdkInitializers: [_MockSdkInitializer()],
+          adapters: [partialAdapter],
+        ),
+      );
+      await refillPlugin.init();
+      await refillPlugin.loadNative(
+        const PlacementType('home'),
+        eventName: 'first_load',
+      );
+      await refillPlugin.loadNative(
+        const PlacementType('home'),
+        eventName: 'refill',
+      );
+
+      expect(
+        refillPlugin.getNativeAds(
+          const PlacementType('home'),
+          eventName: 'home_show',
+        ),
+        hasLength(2),
+      );
+      await refillPlugin.dispose();
+      expect(partialAdapter.disposeCount, 2);
+    });
+
+    test('dispose during load disposes the late result', () async {
+      final gate = Completer<void>();
+      final delayedAdapter = _CountingAdapter(
+        source: AdSource.admob,
+        type: AdType.interstitial,
+        loadGates: {1: gate},
+      );
+      final delayedPlugin = AdPlugin(
+        config: AdPluginConfig(
+          configRepository: configRepo,
+          eventReporter: reporter,
+          sdkInitializers: [_MockSdkInitializer()],
+          adapters: [delayedAdapter],
+        ),
+      );
+      await delayedPlugin.init();
+      final load = delayedPlugin.preload(
+        const PlacementType('interstitial'),
+        eventName: 'delayed_load',
+      );
+      await _waitUntil(() => delayedAdapter.loadCount == 1);
+      await delayedPlugin.dispose();
+      gate.complete();
+
+      expect(await load, isFalse);
+      expect(delayedAdapter.disposeCount, 1);
+    });
+
+    test('preloadPlacements waits for all loads', () async {
+      final gate = Completer<void>();
+      final delayedAdapter = _CountingAdapter(
+        source: AdSource.admob,
+        type: AdType.interstitial,
+        loadGates: {1: gate},
+      );
+      final delayedPlugin = AdPlugin(
+        config: AdPluginConfig(
+          configRepository: configRepo,
+          eventReporter: reporter,
+          sdkInitializers: [_MockSdkInitializer()],
+          adapters: [delayedAdapter],
+        ),
+      );
+      await delayedPlugin.init();
+      var completed = false;
+      final preload = delayedPlugin.preloadPlacements([
+        const PlacementType('interstitial'),
+      ], eventName: 'batch_load')..then((_) => completed = true);
+      await _waitUntil(() => delayedAdapter.loadCount == 1);
+      expect(completed, isFalse);
+
+      gate.complete();
+      await preload;
+      expect(completed, isTrue);
+      await delayedPlugin.dispose();
     });
 
     test('fullscreen show prefers level_h and applies ad_cd', () async {
@@ -486,9 +693,10 @@ void main() {
         behavior2Load.complete();
         await _waitUntil(() => behavior2Adapter.loadSuccessCount == 1);
         behaviorClose.complete();
-        final shown = await showFuture;
+        final result = await showFuture;
 
-        expect(shown, isTrue);
+        expect(result.shown, isTrue);
+        expect(result.shownCount, 2);
         expect(behaviorAdapter.showCount, 1);
         expect(behavior2Adapter.showCount, 1);
         expect(behavior2Adapter.loadCount, greaterThanOrEqualTo(1));
@@ -572,9 +780,10 @@ void main() {
               behaviorAdapter.loadSuccessCount == 1,
         );
         highClose.complete();
-        final shown = await showFuture;
+        final result = await showFuture;
 
-        expect(shown, isTrue);
+        expect(result.shown, isTrue);
+        expect(result.shownCount, 1);
         expect(highAdapter.showCount, 1);
         expect(behaviorAdapter.showCount, 0);
         expect(behavior2Adapter.showCount, 0);
@@ -656,7 +865,7 @@ void main() {
         await _waitUntil(() => highAdapter.showCount == 1);
         firstHighClose.complete();
 
-        expect(await showFuture, isTrue);
+        expect((await showFuture).shown, isTrue);
         expect(highAdapter.showCount, 1);
         expect(behaviorAdapter.showCount, 0);
         expect(behavior2Adapter.showCount, 1);
@@ -746,7 +955,7 @@ void main() {
         behaviorClose.complete();
 
         expect(await behavior2Preload, isTrue);
-        expect(await showFuture, isTrue);
+        expect((await showFuture).shown, isTrue);
         expect(behaviorAdapter.showCount, 1);
         expect(highAdapter.showCount, 1);
         expect(behavior2Adapter.showCount, 0);
@@ -881,8 +1090,12 @@ void main() {
         PlacementType('banner_bottom'),
         eventName: 'article',
       );
-      final ad = plugin.getBannerAd(PlacementType('banner_bottom'));
+      final ad = plugin.getBannerAd(
+        PlacementType('banner_bottom'),
+        eventName: 'banner_show',
+      );
       expect(ad, isNotNull);
+      expect(reporter.events.last.eventName, 'banner_show');
     });
 
     test('disposeBannerAd clears cache', () async {
@@ -892,7 +1105,13 @@ void main() {
         eventName: 'article',
       );
       plugin.disposeBannerAd(PlacementType('banner_bottom'));
-      expect(plugin.getBannerAd(PlacementType('banner_bottom')), isNull);
+      expect(
+        plugin.getBannerAd(
+          PlacementType('banner_bottom'),
+          eventName: 'banner_show',
+        ),
+        isNull,
+      );
     });
 
     test('widgetFactory returns valid factory', () async {
@@ -909,6 +1128,25 @@ void main() {
 
       expect(ok, isTrue);
       expect(nativeAdapter.lastRenderAsFullscreen, isTrue);
+    });
+
+    testWidgets('fullscreen native requires a host presenter', (tester) async {
+      await plugin.init();
+      await plugin.preload(
+        const PlacementType('fullscreen_native'),
+        eventName: 'fullscreen_native_preload',
+      );
+      await tester.pumpWidget(const MaterialApp(home: SizedBox()));
+
+      final result = await plugin.show(
+        const PlacementType('fullscreen_native'),
+        context: tester.element(find.byType(SizedBox)),
+        eventName: 'fullscreen_native_show',
+      );
+
+      expect(result.shown, isFalse);
+      expect(result.errorReason, 'missing_fullscreen_native_presenter');
+      expect(nativeAdapter.disposeCount, 1);
     });
 
     test(
@@ -970,8 +1208,41 @@ void main() {
     testWidgets('fullscreen native show waits for dialog close', (
       tester,
     ) async {
-      await plugin.init();
-      await plugin.preload(
+      final closeGate = Completer<void>();
+      final presenterEntered = Completer<void>();
+      int? receivedClosePercent;
+      final nativePlugin = AdPlugin(
+        config: AdPluginConfig(
+          configRepository: configRepo,
+          eventReporter: reporter,
+          placementPolicies: {
+            const PlacementType('fullscreen_native'): PlacementPolicy(
+              isFullscreen: true,
+              allowedTypes: {AdType.native},
+            ),
+          },
+          sdkInitializers: [_MockSdkInitializer()],
+          adapters: [nativeAdapter],
+          fullscreenNativePresenter:
+              ({
+                required context,
+                required placement,
+                required eventName,
+                required ad,
+                required clickTracker,
+                required closePassThroughPercent,
+                required onClosed,
+              }) async {
+                receivedClosePercent = closePassThroughPercent;
+                presenterEntered.complete();
+                await closeGate.future;
+                onClosed();
+                return true;
+              },
+        ),
+      );
+      await nativePlugin.init();
+      await nativePlugin.preload(
         const PlacementType('fullscreen_native'),
         eventName: 'fullscreen_native_preload',
       );
@@ -983,7 +1254,7 @@ void main() {
             builder: (context) {
               return TextButton(
                 onPressed: () {
-                  showFuture = plugin.show(
+                  showFuture = nativePlugin.show(
                     const PlacementType('fullscreen_native'),
                     context: context,
                     eventName: 'fullscreen_native_show',
@@ -999,33 +1270,24 @@ void main() {
 
       await tester.tap(find.text('show fullscreen native'));
       await tester.pump();
-      await tester.pump(const Duration(milliseconds: 200));
-
-      expect(
-        find.byKey(FullscreenNativeAdDialog.advertisementLabelKey),
-        findsOneWidget,
-      );
-      expect(
-        find.byKey(FullscreenNativeAdDialog.closeButtonKey),
-        findsOneWidget,
-      );
+      await presenterEntered.future;
       expect(nativeAdapter.showCount, 1);
       expect(nativeAdapter.lastClosePassThroughPercent, 100);
+      expect(receivedClosePercent, 100);
+      expect(showFuture, isNotNull);
 
-      nativeAdapter.notifyClicked();
+      closeGate.complete();
       await tester.pump();
-
-      await tester.tap(find.byKey(FullscreenNativeAdDialog.closeButtonKey));
-      await tester.pumpAndSettle();
 
       expect((await showFuture)?.shown, isTrue);
       expect(nativeAdapter.disposeCount, 1);
+      await _waitUntil(() => nativeAdapter.loadCount >= 2);
       expect(nativeAdapter.loadCount, greaterThanOrEqualTo(2));
       expect(
         reporter.events.map((event) => event.eventType),
         contains(AdEventType.close),
       );
-      await plugin.dispose();
+      await nativePlugin.dispose();
     });
 
     test('dispose clears state', () async {

@@ -19,16 +19,12 @@ import UIKit
       factoryId: "homeListTile",
       nativeAdFactory: homeFactory
     )
-    let factory = FullScreenNativeAdFactory()
-    fullScreenNativeAdFactory = factory
-    let registered = FLTGoogleMobileAdsPlugin.registerNativeAdFactory(
+    let fullScreenFactory = FullScreenNativeAdFactory()
+    fullScreenNativeAdFactory = fullScreenFactory
+    FLTGoogleMobileAdsPlugin.registerNativeAdFactory(
       self,
       factoryId: "fullScreenNative",
-      nativeAdFactory: factory
-    )
-    NSLog(
-      "[flutter_ad_plugin] fullScreenNative factory %@",
-      registered ? "registered" : "already registered"
+      nativeAdFactory: fullScreenFactory
     )
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
   }

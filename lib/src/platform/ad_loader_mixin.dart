@@ -39,17 +39,21 @@ mixin CommonLoaderMixin<TAd extends Object> {
     required String loadTimeoutLabel,
     required String sourceName,
     required String typeName,
+    AppLogger? logger,
     required Future<void> Function(
       void Function(TAd ad) onLoaded,
       void Function(Object error) onFailed,
-    ) startLoad,
+    )
+    startLoad,
     CancellationToken? cancellationToken,
+    void Function(TAd ad)? onLateAdLoaded,
   }) async {
+    final effectiveLogger = logger ?? log;
     final completer = Completer<AdLoadResult<Object>>();
 
     final timer = Timer(timeout, () {
       if (!completer.isCompleted) {
-        log.v(
+        effectiveLogger.v(
           '❌ [adapter_load] timeout: source=$sourceName type=$typeName '
           'id=${unit.id} timeout=${timeout.inSeconds}s',
         );
@@ -72,10 +76,33 @@ mixin CommonLoaderMixin<TAd extends Object> {
       );
     }
 
+    final removeCancellationListener = cancellationToken?.addListener(() {
+      if (!completer.isCompleted) {
+        completer.complete(
+          AdLoadResult.failure(
+            type: AdType(unit.type.name),
+            adUnitId: unit.id,
+            error: 'cancelled',
+          ),
+        );
+      }
+    });
+
     try {
       await startLoad(
         (ad) {
           if (!completer.isCompleted) {
+            if (cancellationToken?.isCancelled ?? false) {
+              completer.complete(
+                AdLoadResult.failure(
+                  type: AdType(unit.type.name),
+                  adUnitId: unit.id,
+                  error: 'cancelled',
+                ),
+              );
+              onLateAdLoaded?.call(ad);
+              return;
+            }
             completer.complete(
               AdLoadResult.success(
                 ad: ad,
@@ -83,10 +110,12 @@ mixin CommonLoaderMixin<TAd extends Object> {
                 adUnitId: unit.id,
               ),
             );
+          } else {
+            onLateAdLoaded?.call(ad);
           }
         },
         (error) {
-          log.v(
+          effectiveLogger.v(
             '❌ [adapter_load] failed: source=$sourceName type=$typeName '
             'id=${unit.id} error=$error',
           );
@@ -102,7 +131,7 @@ mixin CommonLoaderMixin<TAd extends Object> {
         },
       );
     } catch (e) {
-      log.v(
+      effectiveLogger.v(
         '❌ [adapter_load] failed: source=$sourceName type=$typeName '
         'id=${unit.id} error=$e',
       );
@@ -117,6 +146,9 @@ mixin CommonLoaderMixin<TAd extends Object> {
       }
     }
 
-    return completer.future.whenComplete(timer.cancel);
+    return completer.future.whenComplete(() {
+      timer.cancel();
+      removeCancellationListener?.call();
+    });
   }
 }

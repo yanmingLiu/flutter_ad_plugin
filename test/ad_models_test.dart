@@ -129,6 +129,24 @@ void main() {
     });
   });
 
+  test('AdSequenceShowResult reports aggregate and individual results', () {
+    final result = AdSequenceShowResult(
+      requestedPlacement: const PlacementType('behavior'),
+      results: [
+        AdShowResult.success(
+          shownPlacement: const PlacementType('level_h'),
+          adUnitId: 'high-id',
+        ),
+        AdShowResult.failure(errorReason: 'show_failed'),
+      ],
+      errorReason: 'show_failed',
+    );
+
+    expect(result.shown, isTrue);
+    expect(result.shownCount, 1);
+    expect(result.results, hasLength(2));
+  });
+
   group('AdAttribution', () {
     test('stores all attribution fields', () {
       final attr = AdAttribution(

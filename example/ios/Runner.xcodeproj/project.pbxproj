@@ -7,6 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		FA1100012F00000000000001 /* FullScreenNativeAdFactory.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA1100022F00000000000001 /* FullScreenNativeAdFactory.swift */; };
+		FA1100032F00000000000001 /* HomeNativeAdFactory.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA1100042F00000000000001 /* HomeNativeAdFactory.swift */; };
 		1498D2341E8E89220040F4C2 /* GeneratedPluginRegistrant.m in Sources */ = {isa = PBXBuildFile; fileRef = 1498D2331E8E89220040F4C2 /* GeneratedPluginRegistrant.m */; };
 		331C808B294A63AB00263BE5 /* RunnerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 331C807B294A618700263BE5 /* RunnerTests.swift */; };
 		3764E789FFB1D08FFD57F87A /* Pods_RunnerTests.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 037A6EBE7C5424A3130DC11B /* Pods_RunnerTests.framework */; };
@@ -17,8 +19,6 @@
 		97C146FE1CF9000F007C117D /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 97C146FD1CF9000F007C117D /* Assets.xcassets */; };
 		97C147011CF9000F007C117D /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 97C146FF1CF9000F007C117D /* LaunchScreen.storyboard */; };
 		F533BFDFB8D7FE23B5CC2848 /* Pods_Runner.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 836618FF39215F225CA19C10 /* Pods_Runner.framework */; };
-		FA1100012F00000000000001 /* FullScreenNativeAdFactory.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA1100022F00000000000001 /* FullScreenNativeAdFactory.swift */; };
-		FA1100032F00000000000001 /* HomeNativeAdFactory.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA1100042F00000000000001 /* HomeNativeAdFactory.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -45,6 +45,8 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		FA1100022F00000000000001 /* FullScreenNativeAdFactory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FullScreenNativeAdFactory.swift; sourceTree = "<group>"; };
+		FA1100042F00000000000001 /* HomeNativeAdFactory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeNativeAdFactory.swift; sourceTree = "<group>"; };
 		037A6EBE7C5424A3130DC11B /* Pods_RunnerTests.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Pods_RunnerTests.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		1498D2321E8E86230040F4C2 /* GeneratedPluginRegistrant.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = GeneratedPluginRegistrant.h; sourceTree = "<group>"; };
 		1498D2331E8E89220040F4C2 /* GeneratedPluginRegistrant.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = GeneratedPluginRegistrant.m; sourceTree = "<group>"; };
@@ -71,8 +73,6 @@
 		97C147001CF9000F007C117D /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; name = Base; path = Base.lproj/LaunchScreen.storyboard; sourceTree = "<group>"; };
 		97C147021CF9000F007C117D /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		9A61C87074AB49EAF9C07593 /* Pods-Runner.profile.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Runner.profile.xcconfig"; path = "Target Support Files/Pods-Runner/Pods-Runner.profile.xcconfig"; sourceTree = "<group>"; };
-		FA1100022F00000000000001 /* FullScreenNativeAdFactory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = FullScreenNativeAdFactory.swift; path = ../../ios/NativeAdFactories/FullScreenNativeAdFactory.swift; sourceTree = SOURCE_ROOT; };
-		FA1100042F00000000000001 /* HomeNativeAdFactory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = HomeNativeAdFactory.swift; path = ../../ios/NativeAdFactories/HomeNativeAdFactory.swift; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */

@@ -5,7 +5,9 @@ import 'ad_reporter.dart';
 final log = AppLogger();
 
 class AppLogger {
-  bool verboseEnabled = true;
+  AppLogger({this.verboseEnabled = true});
+
+  final bool verboseEnabled;
 
   void d(Object message) {
     debugPrint('[ad] $message');

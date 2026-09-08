@@ -26,16 +26,7 @@ class AdWidgetFactory {
   }
 
   /// Creates a single native ad widget.
-  Widget nativeWidget(Object ad, {double height = 280}) {
-    return NativeAdView(ad: ad, height: height);
-  }
-
-  /// Creates a dual native ad widget (vertical or horizontal).
-  Widget dualNativeWidget(
-    List<Object> ads, {
-    double height = 600,
-    Axis direction = Axis.vertical,
-  }) {
-    return DualNativeAdView(ads: ads, height: height, direction: direction);
+  Widget nativeWidget(Object ad, {double height = 280, bool expand = false}) {
+    return NativeAdView(ad: ad, height: height, expand: expand);
   }
 }

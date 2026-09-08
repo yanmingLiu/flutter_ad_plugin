@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_ad_plugin/flutter_ad_plugin.dart';
 
 import 'demo_components.dart';
+import 'fullscreen_native_ad_dialog.dart';
 import 'integration_templates.dart';
 import 'utils/ad_lifecycle.dart';
 
@@ -43,6 +44,7 @@ Future<void> main() async {
       verboseLogging: true,
       enableHealthMetrics: true,
       nativeAdCloseClickPercent: 0,
+      fullscreenNativePresenter: FullscreenNativeAdDialog.show,
     ),
   );
 
@@ -234,7 +236,7 @@ class _DemoHomePageState extends State<DemoHomePage> {
       _showingFullscreen = true;
       _fsStatus = '正在连续展示全屏广告...';
     });
-    final shown = await adPlugin.showSequence(
+    final result = await adPlugin.showSequence(
       behaviorPlacement,
       context: context,
       eventName: 'behavior_sequence_show',
@@ -243,7 +245,9 @@ class _DemoHomePageState extends State<DemoHomePage> {
     if (!mounted) return;
     setState(() {
       _showingFullscreen = false;
-      _fsStatus = shown ? '连续广告已关闭 ✓' : '无广告可展示 ✗';
+      _fsStatus = result.shown
+          ? '连续广告已关闭，共 ${result.shownCount} 个 ✓'
+          : '无广告可展示 ✗';
     });
   }
 
@@ -279,10 +283,16 @@ class _DemoHomePageState extends State<DemoHomePage> {
   // ── Banner 广告 ───────────────────────────────────────────
 
   Future<void> _initBannerAd() async {
-    var ad = adPlugin.getBannerAd(bottomBannerPlacement);
+    var ad = adPlugin.getBannerAd(
+      bottomBannerPlacement,
+      eventName: 'home_bottom_show',
+    );
     if (ad == null) {
       await adPlugin.loadBanner(bottomBannerPlacement, eventName: 'first_load');
-      ad = adPlugin.getBannerAd(bottomBannerPlacement);
+      ad = adPlugin.getBannerAd(
+        bottomBannerPlacement,
+        eventName: 'home_bottom_show',
+      );
     }
     if (mounted) {
       setState(() {
@@ -420,10 +430,7 @@ class _DemoHomePageState extends State<DemoHomePage> {
                     ? '正在依次加载两条素材...'
                     : '完整缓存：${_playMiddleAds.length}/2',
                 trailing: _playMiddleAds.length == 2
-                    ? adPlugin.widgetFactory.dualNativeWidget(
-                        _playMiddleAds,
-                        height: 560,
-                      )
+                    ? DualNativeAdView(ads: _playMiddleAds, height: 560)
                     : null,
               ),
 

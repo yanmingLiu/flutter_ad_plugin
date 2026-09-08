@@ -6,9 +6,9 @@ import '../core/ad_config.dart';
 import '../core/ad_enums.dart';
 import '../core/ad_models.dart';
 import '../core/ad_policy.dart';
+import '../api/fullscreen_native_presenter.dart';
 import '../platform/ad_callback.dart';
 import '../platform/ad_registry.dart';
-import '../ui/fullscreen_native_ad_dialog.dart';
 import '../utils/ad_logger.dart';
 import '../utils/ad_reporter.dart';
 import 'ad_cache_service.dart';
@@ -28,6 +28,8 @@ class AdPresenter {
   final AdEventMapper _eventMapper;
   final AdEventReporter _reporter;
   final AdLoaderService _loader;
+  final AppLogger _logger;
+  final FullscreenNativeAdPresenter? _fullscreenNativePresenter;
 
   AdPresenter({
     required AdConfigRepository configRepository,
@@ -37,13 +39,17 @@ class AdPresenter {
     required AdEventMapper eventMapper,
     required AdEventReporter reporter,
     required AdLoaderService loader,
+    AppLogger? logger,
+    FullscreenNativeAdPresenter? fullscreenNativePresenter,
   }) : _configRepo = configRepository,
        _adapterRegistry = adapterRegistry,
        _cache = cache,
        _guard = guard,
        _eventMapper = eventMapper,
        _reporter = reporter,
-       _loader = loader;
+       _loader = loader,
+       _logger = logger ?? log,
+       _fullscreenNativePresenter = fullscreenNativePresenter;
 
   // --- Fullscreen Show ---
 
@@ -60,7 +66,7 @@ class AdPresenter {
     final guardPlacement = poolPlacements.first;
     final guardPolicy = adConfig.getPolicy(guardPlacement);
 
-    log.v(
+    _logger.v(
       '🚀 [show] request=${placement.name} '
       'event=$eventName '
       'pool=${poolPlacements.map((p) => p.name).join(',')}',
@@ -72,7 +78,7 @@ class AdPresenter {
       configRepository: _configRepo,
     );
     if (!guardResult.allowed) {
-      log.v(
+      _logger.v(
         '🚫 [show] blocked: event=$eventName '
         'reason=${guardResult.reason?.name}',
       );
@@ -91,7 +97,7 @@ class AdPresenter {
 
     if (slot == null) {
       final lastError = _firstPoolError(poolPlacements);
-      log.v(
+      _logger.v(
         '❌ [show] failed: reason=no_cache '
         'request=${placement.name} '
         'lastError=$lastError',
@@ -173,7 +179,7 @@ class AdPresenter {
   }
 
   /// Coordinates two common fullscreen placements and shows each at most once.
-  Future<bool> showSequence(
+  Future<AdSequenceShowResult> showSequence(
     PlacementType placement, {
     BuildContext? context,
     required String eventName,
@@ -187,7 +193,7 @@ class AdPresenter {
         .take(2)
         .toList();
     if (sequencePlacements.length < 2) {
-      return (await show(
+      final result = await show(
         placement,
         // ignore: use_build_context_synchronously
         context: context,
@@ -195,7 +201,12 @@ class AdPresenter {
         onAdShowed: onAdShowed,
         closePassThroughPercent: closePassThroughPercent,
         onAdNotReady: onAdNotReady,
-      )).shown;
+      );
+      return AdSequenceShowResult(
+        requestedPlacement: placement,
+        results: [result],
+        errorReason: result.errorReason,
+      );
     }
 
     final guardPlacement = sequencePlacements.first;
@@ -210,7 +221,10 @@ class AdPresenter {
         eventName: eventName,
         errorReason: _guardErrorReason(guardResult),
       );
-      return false;
+      return AdSequenceShowResult(
+        requestedPlacement: placement,
+        errorReason: _guardErrorReason(guardResult),
+      );
     }
 
     final initiallyAvailable = sequencePlacements
@@ -240,7 +254,10 @@ class AdPresenter {
           ),
         );
       }
-      return false;
+      return AdSequenceShowResult(
+        requestedPlacement: placement,
+        errorReason: 'no_cache',
+      );
     }
     final startedWithoutCommonInventory = initiallyAvailable.isEmpty;
     final firstTarget =
@@ -249,11 +266,20 @@ class AdPresenter {
       (candidate) => candidate != firstTarget,
     );
     final firstSlot = highValueSlot ?? _cache.firstSlot(firstTarget);
-    if (firstSlot == null) return false;
+    if (firstSlot == null) {
+      return AdSequenceShowResult(
+        requestedPlacement: placement,
+        errorReason: 'no_cache',
+      );
+    }
     final usedHighValueFirst =
         highValue != null && firstSlot.placement == highValue;
 
-    _cache.removeSlot(firstSlot.placement, firstSlot);
+    _cache.setAttribution(
+      firstSlot.ad,
+      firstSlot.placement,
+      eventName: eventName,
+    );
     for (final target in sequencePlacements.where((p) => !_cache.hasSlot(p))) {
       unawaited(_loader.preloadPlacement(target, eventName: eventName));
     }
@@ -277,16 +303,34 @@ class AdPresenter {
       if (usedHighValueFirst) {
         unawaited(_loader.preloadPlacement(highValue, eventName: eventName));
       }
-      return false;
+      return AdSequenceShowResult(
+        requestedPlacement: placement,
+        results: [firstShown],
+        errorReason: firstShown.errorReason,
+      );
     }
-    if (startedWithoutCommonInventory) return true;
+    if (startedWithoutCommonInventory) {
+      return AdSequenceShowResult(
+        requestedPlacement: placement,
+        results: [firstShown],
+      );
+    }
 
     final secondSlot = usedHighValueFirst
         ? _cache.firstSlot(secondTarget)
         : _highValueOrPlacementSlot(adConfig, secondTarget);
-    if (secondSlot == null) return true;
+    if (secondSlot == null) {
+      return AdSequenceShowResult(
+        requestedPlacement: placement,
+        results: [firstShown],
+      );
+    }
 
-    _cache.removeSlot(secondSlot.placement, secondSlot);
+    _cache.setAttribution(
+      secondSlot.ad,
+      secondSlot.placement,
+      eventName: eventName,
+    );
     final usedHighValueSecond =
         highValue != null && secondSlot.placement == highValue;
     if (!usedHighValueSecond) {
@@ -307,7 +351,11 @@ class AdPresenter {
     if (!secondShown.shown && usedHighValueSecond) {
       unawaited(_loader.preloadPlacement(highValue, eventName: eventName));
     }
-    return secondShown.shown;
+    return AdSequenceShowResult(
+      requestedPlacement: placement,
+      results: [firstShown, secondShown],
+      errorReason: secondShown.shown ? null : secondShown.errorReason,
+    );
   }
 
   AdSlotLoaded? _highValueOrPlacementSlot(
@@ -362,8 +410,12 @@ class AdPresenter {
 
   // --- Banner Retrieval ---
 
-  Object? getBannerAd(PlacementType placement) {
-    return _cache.firstSlot(placement)?.ad;
+  Object? getBannerAd(PlacementType placement, {required String eventName}) {
+    final slot = _cache.firstSlot(placement);
+    if (slot == null) return null;
+    _cache.setAttribution(slot.ad, placement, eventName: eventName);
+    _reportRetrieval(slot, eventName: eventName);
+    return slot.ad;
   }
 
   List<Object> getBannerAds(
@@ -408,6 +460,7 @@ class AdPresenter {
     VoidCallback? onAdShowed,
     int? closePassThroughPercent,
   }) async {
+    _cache.setAttribution(slot.ad, slot.placement, eventName: eventName);
     final adapter = _adapterRegistry.get(slot.source, slot.type);
     final callback = _showCallback(
       requestedPlacement: showPlacement,
@@ -439,6 +492,26 @@ class AdPresenter {
         );
       }
 
+      final fullscreenNativePresenter = _fullscreenNativePresenter;
+      if (fullscreenNativePresenter == null) {
+        callback(
+          AdShowFailedCallback(
+            slot.ad,
+            null,
+            'missing_fullscreen_native_presenter',
+            null,
+          ),
+        );
+        _guard.markShowFailed(slot.placement, policy);
+        adapter.dispose(slot.ad);
+        _cache.removeSlot(slot.placement, slot);
+        return _slotFailure(
+          slot,
+          showPlacement,
+          errorReason: 'missing_fullscreen_native_presenter',
+        );
+      }
+
       final result = await adapter.show(
         placement: showPlacement,
         context: context,
@@ -450,7 +523,7 @@ class AdPresenter {
       );
 
       if (!result.shown) {
-        log.v(
+        _logger.v(
           '❌ [show] failed: showPlacement=${showPlacement.name} '
           'cachePlacement=${slot.placement.name} id=${slot.adUnitId} '
           'error=${result.error}',
@@ -466,25 +539,45 @@ class AdPresenter {
         );
       }
 
-      final dialogShown = await FullscreenNativeAdDialog.show(
-        // ignore: use_build_context_synchronously
-        context: context,
-        placement: showPlacement,
-        eventName: eventName,
-        ad: slot.ad,
-        clickTracker: adapter is NativeAdClickTracker
-            ? adapter as NativeAdClickTracker
-            : null,
-        closePassThroughPercent: closePassThroughPercent ?? 0,
-        onClosed: () {
-          callback(AdClosedCallback(slot.ad, null));
-          _adapterRegistry.get(slot.source, slot.type).dispose(slot.ad);
-          _cache.removeSlot(slot.placement, slot);
-          unawaited(_loader.preload(slot.placement, eventName: eventName));
-        },
-      );
+      bool dialogShown;
+      var closed = false;
+      void handleClosed() {
+        if (closed) return;
+        closed = true;
+        callback(AdClosedCallback(slot.ad, null));
+        _adapterRegistry.get(slot.source, slot.type).dispose(slot.ad);
+        _cache.removeSlot(slot.placement, slot);
+        unawaited(_loader.preload(slot.placement, eventName: eventName));
+      }
+
+      try {
+        dialogShown = await fullscreenNativePresenter(
+          // ignore: use_build_context_synchronously
+          context: context,
+          placement: showPlacement,
+          eventName: eventName,
+          ad: slot.ad,
+          clickTracker: adapter is NativeAdClickTracker
+              ? adapter as NativeAdClickTracker
+              : null,
+          closePassThroughPercent: closePassThroughPercent ?? 0,
+          onClosed: handleClosed,
+        );
+      } catch (error) {
+        callback(AdShowFailedCallback(slot.ad, null, error.toString(), null));
+        _guard.markShowFailed(slot.placement, policy);
+        adapter.dispose(slot.ad);
+        _cache.removeSlot(slot.placement, slot);
+        return _slotFailure(
+          slot,
+          showPlacement,
+          error: error,
+          errorReason: 'fullscreen_native_presenter_failed',
+        );
+      }
 
       if (dialogShown) {
+        handleClosed();
         _guard.markShowCompleted(slot.placement);
         return _slotSuccess(slot, showPlacement);
       }
@@ -511,7 +604,7 @@ class AdPresenter {
     if (result.shown) {
       _guard.markShowCompleted(slot.placement);
     } else {
-      log.v(
+      _logger.v(
         '❌ [show] failed: showPlacement=${showPlacement.name} '
         'cachePlacement=${slot.placement.name} id=${slot.adUnitId} '
         'error=${result.error}',
@@ -589,7 +682,7 @@ class AdPresenter {
         network: event.network,
       );
       _reporter.report(attributedEvent);
-      log.event(attributedEvent);
+      _logger.event(attributedEvent);
     };
   }
 
@@ -649,7 +742,7 @@ class AdPresenter {
       timestamp: DateTime.now(),
       eventName: eventName,
     );
-    log.event(event);
+    _logger.event(event);
     _reporter.report(event);
   }
 }

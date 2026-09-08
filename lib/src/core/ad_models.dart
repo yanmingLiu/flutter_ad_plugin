@@ -138,3 +138,19 @@ class AdShowResult {
     error: error,
   );
 }
+
+/// Result of a multi-ad sequence. Each attempted cached ad has one entry.
+class AdSequenceShowResult {
+  final PlacementType requestedPlacement;
+  final List<AdShowResult> results;
+  final String? errorReason;
+
+  const AdSequenceShowResult({
+    required this.requestedPlacement,
+    this.results = const [],
+    this.errorReason,
+  });
+
+  bool get shown => results.any((result) => result.shown);
+  int get shownCount => results.where((result) => result.shown).length;
+}

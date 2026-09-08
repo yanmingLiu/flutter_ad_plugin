@@ -16,6 +16,7 @@ import '../reporting/ad_health_metrics.dart';
 import '../utils/ad_logger.dart';
 import '../utils/ad_reporter.dart';
 import 'ad_widget_factory.dart';
+import 'fullscreen_native_presenter.dart';
 
 /// Immutable configuration for [AdPlugin].
 ///
@@ -31,6 +32,7 @@ class AdPluginConfig {
   final List<AdTypeAdapter>? adapters;
   final List<AdSourceSdkInitializer>? sdkInitializers;
   final int nativeAdCloseClickPercent;
+  final FullscreenNativeAdPresenter? fullscreenNativePresenter;
   final bool verboseLogging;
   final bool enableHealthMetrics;
 
@@ -42,6 +44,7 @@ class AdPluginConfig {
     this.adapters,
     this.sdkInitializers,
     this.nativeAdCloseClickPercent = 0,
+    this.fullscreenNativePresenter,
     this.verboseLogging = false,
     this.enableHealthMetrics = false,
   });
@@ -69,17 +72,16 @@ class AdPluginConfig {
 class AdPlugin {
   final AdPluginConfig _config;
   late final AdWidgetFactory _widgetFactory;
-  late final AdSdkInitializer _sdkInitializer;
   late final AdAdapterRegistry _adapterRegistry;
   late final AdCacheService _cache;
   late final AdDisplayGuard _guard;
-  late final AdEventMapper _eventMapper;
   late final AdLoaderService _loader;
   late final AdPresenter _presenter;
   AdHealthMetrics? _healthMetrics;
 
   bool _initialized = false;
   bool _disposed = false;
+  Future<void>? _initializing;
 
   AdPlugin({required AdPluginConfig config}) : _config = config;
 
@@ -103,32 +105,43 @@ class AdPlugin {
   /// Can be called multiple times safely (subsequent calls are no-ops).
   Future<void> init() async {
     if (_initialized) return;
+    if (_disposed) {
+      throw StateError('AdPlugin has been disposed and cannot be reused.');
+    }
+    final pending = _initializing;
+    if (pending != null) return pending;
+    final future = _initialize();
+    _initializing = future;
+    try {
+      await future;
+    } finally {
+      if (identical(_initializing, future)) _initializing = null;
+    }
+  }
 
-    log.verboseEnabled = _config.verboseLogging;
-
-    _sdkInitializer = AdSdkInitializer(
+  Future<void> _initialize() async {
+    final logger = AppLogger(verboseEnabled: _config.verboseLogging);
+    final sdkInitializer = AdSdkInitializer(
       _config.sdkInitializers ?? [AdmobSdkInitializer()],
     );
-    _adapterRegistry = AdAdapterRegistry(
+    final adapterRegistry = AdAdapterRegistry(
       _config.adapters ??
           [
-            AdmobOpenAdapter(),
-            AdmobInterstitialAdapter(),
-            AdmobRewardedAdapter(),
-            AdmobRewardedInterstitialAdapter(),
-            AdmobNativeAdapter(),
-            AdmobBannerAdapter(),
+            AdmobOpenAdapter(logger: logger),
+            AdmobInterstitialAdapter(logger: logger),
+            AdmobRewardedAdapter(logger: logger),
+            AdmobRewardedInterstitialAdapter(logger: logger),
+            AdmobNativeAdapter(logger: logger),
+            AdmobBannerAdapter(logger: logger),
           ],
     );
-    _cache = AdCacheService();
-    _guard = AdDisplayGuard();
-    _eventMapper = AdEventMapper();
-
-    if (_config.enableHealthMetrics) {
-      _healthMetrics = AdHealthMetrics();
-    }
-
-    _widgetFactory = AdWidgetFactory();
+    final cache = AdCacheService();
+    final guard = AdDisplayGuard();
+    final eventMapper = AdEventMapper();
+    final healthMetrics = _config.enableHealthMetrics
+        ? AdHealthMetrics()
+        : null;
+    final widgetFactory = AdWidgetFactory();
 
     // Build config repository with policy overrides
     final effectiveConfigRepo = _config.placementPolicies.isEmpty
@@ -138,29 +151,44 @@ class AdPlugin {
             _config.placementPolicies,
           );
 
-    _loader = AdLoaderService(
+    final loader = AdLoaderService(
       configRepository: effectiveConfigRepo,
-      adapterRegistry: _adapterRegistry,
-      cache: _cache,
-      eventMapper: _eventMapper,
+      adapterRegistry: adapterRegistry,
+      cache: cache,
+      eventMapper: eventMapper,
       reporter: _config.eventReporter,
+      logger: logger,
     );
 
-    _presenter = AdPresenter(
+    final presenter = AdPresenter(
       configRepository: effectiveConfigRepo,
-      adapterRegistry: _adapterRegistry,
-      cache: _cache,
-      guard: _guard,
-      eventMapper: _eventMapper,
+      adapterRegistry: adapterRegistry,
+      cache: cache,
+      guard: guard,
+      eventMapper: eventMapper,
       reporter: _config.eventReporter,
-      loader: _loader,
+      loader: loader,
+      logger: logger,
+      fullscreenNativePresenter: _config.fullscreenNativePresenter,
     );
 
-    await _sdkInitializer.initAll();
+    await sdkInitializer.initAll();
 
     // Prime config
     await effectiveConfigRepo.getConfig();
 
+    if (_disposed) {
+      loader.dispose();
+      return;
+    }
+
+    _adapterRegistry = adapterRegistry;
+    _cache = cache;
+    _guard = guard;
+    _loader = loader;
+    _presenter = presenter;
+    _healthMetrics = healthMetrics;
+    _widgetFactory = widgetFactory;
     _initialized = true;
   }
 
@@ -171,8 +199,19 @@ class AdPlugin {
   Future<void> dispose() async {
     if (_disposed) return;
     _disposed = true;
+    final pending = _initializing;
+    if (pending != null) {
+      try {
+        await pending;
+      } catch (_) {
+        // Initialization owns no published resources until it succeeds.
+      }
+    }
+    if (!_initialized) return;
     _loader.dispose();
-    _cache.disposeAll();
+    for (final slot in _cache.drainAll()) {
+      _adapterRegistry.tryGet(slot.source, slot.type)?.dispose(slot.ad);
+    }
     _guard.resetForTesting();
     _initialized = false;
   }
@@ -209,7 +248,7 @@ class AdPlugin {
     );
   }
 
-  Future<bool> showSequence(
+  Future<AdSequenceShowResult> showSequence(
     PlacementType placement, {
     BuildContext? context,
     required String eventName,
@@ -279,9 +318,9 @@ class AdPlugin {
     return _loader.preloadBanner(placement, eventName: eventName);
   }
 
-  Object? getBannerAd(PlacementType placement) {
+  Object? getBannerAd(PlacementType placement, {required String eventName}) {
     _assertInitialized();
-    return _presenter.getBannerAd(placement);
+    return _presenter.getBannerAd(placement, eventName: eventName);
   }
 
   List<Object> getBannerAds(

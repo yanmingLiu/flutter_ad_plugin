@@ -3,14 +3,7 @@ import 'dart:math';
 
 import 'package:flutter/material.dart';
 
-import '../core/ad_enums.dart';
-import 'native_ad_view.dart';
-
-abstract class NativeAdClickTracker {
-  bool hasClicked(Object ad);
-  void addClickListener(Object ad, VoidCallback listener);
-  void removeClickListener(Object ad, VoidCallback listener);
-}
+import 'package:flutter_ad_plugin/flutter_ad_plugin.dart';
 
 class FullscreenNativeAdDialog extends StatefulWidget {
   const FullscreenNativeAdDialog({
@@ -128,7 +121,9 @@ class _FullscreenNativeAdDialogState extends State<FullscreenNativeAdDialog> {
             return Stack(
               children: [
                 Positioned.fill(
-                  child: widget.adWidget ?? NativeAdView.fullscreen(widget.ad),
+                  child:
+                      widget.adWidget ??
+                      NativeAdView(ad: widget.ad, expand: true),
                 ),
                 SafeArea(
                   child: IgnorePointer(

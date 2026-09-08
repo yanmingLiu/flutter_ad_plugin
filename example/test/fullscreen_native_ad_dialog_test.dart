@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_ad_plugin/src/core/ad_enums.dart';
-import 'package:flutter_ad_plugin/src/ui/fullscreen_native_ad_dialog.dart';
+import 'package:flutter_ad_plugin/flutter_ad_plugin.dart';
+import 'package:flutter_ad_plugin_example/fullscreen_native_ad_dialog.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {

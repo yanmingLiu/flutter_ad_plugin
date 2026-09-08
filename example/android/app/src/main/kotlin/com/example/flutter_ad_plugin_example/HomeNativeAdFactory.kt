@@ -1,4 +1,4 @@
-package com.example.flutter_ad_plugin
+package com.example.flutter_ad_plugin_example
 
 import android.content.Context
 import android.view.LayoutInflater

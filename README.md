@@ -66,6 +66,7 @@ final adPlugin = AdPlugin(
     onAdNotReady: (event) {
       // 插件不依赖弹窗库。宿主按自己的 UI 体系弹 toast/snackbar/dialog。
     },
+    fullscreenNativePresenter: BusinessFullscreenNativeDialog.show,
   ),
 );
 
@@ -102,16 +103,16 @@ if (shown.shown) {
 |---|---|---|
 | `init()` | 注入配置、埋点和未准备回调 | 等待 SDK 与配置初始化 |
 | `preload()` | 预加载单个全屏广告位 | 等待本次加载链路结束 |
-| `preloadPlacements()` | 批量发起预加载 | fire-and-forget，不等加载完成 |
+| `preloadPlacements()` | 批量预加载 | 等待所有广告位的加载链路结束 |
 | `show()` | 展示单个全屏广告 | 等广告关闭或展示失败后返回 |
-| `showSequence()` | 协调两个公共全屏广告位连续展示 | 逐个等待关闭并补载缺失缓存 |
+| `showSequence()` | 协调两个公共全屏广告位连续展示，返回每轮详情 | 逐个等待关闭并补载缺失缓存 |
 | `loadNative()` | 预加载原生广告 | 等待本次加载链路结束 |
 | `getNativeAd()` | 取单个原生缓存并更新展示归因 | 同步返回 |
 | `getNativeAds()` | 取多个原生缓存，用于双原生 | 同步返回 |
 | `loadBanner()` | 预加载 Banner 广告 | 等待本次加载链路结束 |
-| `getBannerAd()` | 取单个 Banner 缓存 | 同步返回 |
+| `getBannerAd()` | 取单个 Banner 缓存并更新展示归因 | 同步返回 |
 | `disposeBannerAd()` | 销毁 Banner 缓存 | 同步 |
-| `dispose()` | 销毁插件，释放所有定时器和缓存 | 同步 |
+| `dispose()` | 销毁插件，取消加载并释放所有广告对象 | 等待并发初始化结束后完成清理 |
 
 ### 原生广告
 
@@ -140,11 +141,21 @@ final ads = adPlugin.getNativeAds(
 );
 
 if (ads.length >= 2) {
-  adPlugin.widgetFactory.dualNativeWidget(ads, height: 560);
+  SizedBox(
+    height: 560,
+    child: Column(
+      children: [
+        Expanded(child: adPlugin.widgetFactory.nativeWidget(ads[0])),
+        Expanded(child: adPlugin.widgetFactory.nativeWidget(ads[1])),
+      ],
+    ),
+  );
 }
 ```
 
-当前 AdMob 原生广告使用 `NativeTemplateStyle`，默认不要求宿主注册自定义 `NativeAdFactory`。如果宿主要自定义原生 UI，则仍需要在 Android / iOS 宿主工程注册自己的 factory。
+双原生的排列、间距和尺寸属于业务 UI，插件只保证两个广告都加载成功后才返回缓存。Example 提供了 `DualNativeAdView` 参考实现。
+
+当前 AdMob 原生广告使用宿主注册的 `NativeAdFactory`。普通 Native 默认查找 `homeListTile`，全屏 Native 默认查找 `fullScreenNative`；接入方式见“原生广告 UI”。
 
 ### Banner 广告
 
@@ -153,7 +164,10 @@ const bannerPlacement = PlacementType('bottom_banner');
 
 await adPlugin.loadBanner(bannerPlacement, eventName: 'article');
 
-final bannerAd = adPlugin.getBannerAd(bannerPlacement);
+final bannerAd = adPlugin.getBannerAd(
+  bannerPlacement,
+  eventName: 'home_bottom_show',
+);
 if (bannerAd != null) {
   adPlugin.widgetFactory.bannerWidget(bannerAd);
 }
@@ -213,7 +227,7 @@ Engine 由 6 个独立 Service 组成：
 
 ### 平台隔离
 
-`AdWidgetFactory` 隔离 `google_mobile_ads` 依赖。宿主通过 `adPlugin.widgetFactory.bannerWidget(ad)` / `.nativeWidget(ad)` / `.dualNativeWidget(ads)` 渲染广告，无需直接 import `google_mobile_ads`。
+`AdWidgetFactory` 隔离 `google_mobile_ads` 依赖。宿主通过 `adPlugin.widgetFactory.bannerWidget(ad)` / `.nativeWidget(ad)` 渲染单个广告，无需直接 import `google_mobile_ads`。双原生排列和全屏弹窗由宿主实现。
 
 ### Platform
 
@@ -445,10 +459,15 @@ _sub = AppStateEventNotifier.appStateStream.listen((state) {
 ### 6. 连续展示
 
 ```dart
-final shown = await adPlugin.showSequence(
+final sequence = await adPlugin.showSequence(
   const PlacementType('behavior'),
   eventName: 'behavior_sequence_show',
 );
+print('是否至少展示一次: ${sequence.shown}');
+print('成功展示数量: ${sequence.shownCount}');
+for (final result in sequence.results) {
+  print('${result.shownPlacement?.name} ${result.type?.name} ${result.adUnitId}');
+}
 ```
 
 除 `open` 外，普通全屏业务场景共用 `common_placements` 的第一个广告位（通常为 `behavior`）库存。调用 `show()` 时按 `high_value_placement -> behavior` 的优先级展示；`open` 独立使用 `high_value_placement -> open`。
@@ -505,9 +524,9 @@ final ads = adPlugin.getNativeAds(
 
 ### 8. 原生广告 UI
 
-插件提供两套默认原生 UI：普通 Native 使用 `homeListTile`，全屏 Native 使用 `fullScreenNative`。宿主需要按 Example 的方式将默认 Factory 注册到当前 Flutter Engine。
+插件的 Dart 层约定两个默认 Factory ID：普通 Native 使用 `homeListTile`，全屏 Native 使用 `fullScreenNative`。插件本身不内置业务 UI，也不自动注册 Factory；宿主必须像 Example 一样实现并注册这两个 Factory。
 
-业务方既可以通过 JSON `factory_id` 使用新的 Factory ID，也可以直接用代码注册相同 ID 覆盖默认模板。相同 ID 不能同时注册两个 Factory；代码覆盖时不要再注册对应的默认 Factory。
+Example 在 `example/ios/Runner` 和 `example/android/app/src/main` 中提供了可直接参考的两套 UI。业务方既可以使用默认 ID，也可以通过 JSON `factory_id` 注册新的 Factory ID。相同 ID 不能同时注册两个 Factory。
 
 全屏原生广告：
 
@@ -539,6 +558,7 @@ final plugin = AdPlugin(
       ),
     },
     nativeAdCloseClickPercent: 0,
+    fullscreenNativePresenter: BusinessFullscreenNativeDialog.show,
   ),
 );
 
@@ -554,9 +574,11 @@ await plugin.show(
 );
 ```
 
-全屏原生广告使用 Flutter 内置 `showGeneralDialog` 展示，因此 `show()` 必须传入 `BuildContext`。未配置 `factory_id` 时，全屏 Native 使用插件默认 ID `fullScreenNative`，普通 Native 使用插件默认 ID `homeListTile`。业务方可注册自己的 Factory，并通过 `factory_id` 覆盖默认 UI。
+插件不内置全屏弹窗 UI。宿主需要通过 `fullscreenNativePresenter` 注入展示函数，Example 的 `example/lib/fullscreen_native_ad_dialog.dart` 提供了 `showGeneralDialog` 参考实现。`show()` 仍需传入 `BuildContext`；未注入 Presenter 时返回 `AdShowResult.errorReason == 'missing_fullscreen_native_presenter'`，同时释放本次缓存。
 
-#### 不修改 JSON，直接覆盖默认模板
+未配置 `factory_id` 时，全屏 Native 使用默认 ID `fullScreenNative`，普通 Native 使用默认 ID `homeListTile`。这两个 ID 都需要业务方在当前 Flutter Engine 上注册，CocoaPods 与 SPM 的注册代码相同。
+
+#### 使用代码注册业务模板
 
 iOS 中实现业务 Factory，然后在 `AppDelegate` 使用默认 ID 注册。下面以覆盖普通 Native 为例：
 
@@ -627,7 +649,7 @@ class MainActivity : FlutterActivity() {
 }
 ```
 
-Android 插件的默认 Factory 在主线程异步注册，因此宿主在 `super.configureFlutterEngine` 返回后立即注册相同 ID，业务 Factory 会优先占用该 ID。覆盖全屏模板时将 ID 改为 `fullScreenNative`。
+普通和全屏模板都应在 `super.configureFlutterEngine` 返回后注册；全屏模板的 ID 使用 `fullScreenNative`。销毁 Engine 时必须注销相同 ID。
 
 ### 9. 常见问题
 
@@ -984,8 +1006,8 @@ sequenceDiagram
   Loader->>Adapter: load(banner unit, onCallback)
   Adapter-->>Loader: BannerAd
   Loader->>Cache: addSlot + setAttribution
-  App->>Plugin: getBannerAd(placement)
-  Plugin->>Cache: getSlots
+  App->>Plugin: getBannerAd(placement, eventName)
+  Plugin->>Cache: getSlots + update attribution
   Plugin-->>App: BannerAd
   Adapter-->>Mapper: AdRawCallback (clicked / impression / paid)
   Mapper-->>Reporter: AdEvent

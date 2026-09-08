@@ -45,7 +45,7 @@ class AdAdapterRegistry {
   String _key(AdSource source, AdType type) => '${source.name}_${type.name}';
 
   AdTypeAdapter get(AdSource source, AdType type) {
-    final adapter = _adapters[_key(source, type)];
+    final adapter = tryGet(source, type);
     if (adapter == null) {
       throw StateError(
         'No adapter registered for source=${source.name}, type=${type.name}',
@@ -53,4 +53,7 @@ class AdAdapterRegistry {
     }
     return adapter;
   }
+
+  AdTypeAdapter? tryGet(AdSource source, AdType type) =>
+      _adapters[_key(source, type)];
 }

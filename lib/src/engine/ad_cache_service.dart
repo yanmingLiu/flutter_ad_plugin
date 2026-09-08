@@ -181,6 +181,15 @@ class AdCacheService {
     _cache.clear();
     _attributions.clear();
   }
+
+  /// Removes and returns every loaded slot so the owner can dispose SDK ads.
+  List<AdSlotLoaded> drainAll() {
+    final slots = _cache.values
+        .expand((states) => states.whereType<AdSlotLoaded>())
+        .toList(growable: false);
+    disposeAll();
+    return slots;
+  }
 }
 
 class _AdCacheScope {
