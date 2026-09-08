@@ -25,6 +25,7 @@ class AdType {
   static const open = AdType('open');
   static const interstitial = AdType('interstitial');
   static const rewarded = AdType('rewarded');
+  static const rewardedInterstitial = AdType('rewarded_interstitial');
   static const native = AdType('native');
   static const doubleNative = AdType('double_native');
   static const banner = AdType('banner');
@@ -38,7 +39,10 @@ class AdType {
   int get hashCode => name.hashCode;
 
   bool get isFullscreen =>
-      this == open || this == interstitial || this == rewarded;
+      this == open ||
+      this == interstitial ||
+      this == rewarded ||
+      this == rewardedInterstitial;
 
   bool get isNative => this == native || this == doubleNative;
 

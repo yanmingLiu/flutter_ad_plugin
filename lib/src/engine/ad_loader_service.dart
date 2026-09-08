@@ -1,7 +1,5 @@
 import 'dart:async';
 
-import 'package:flutter/foundation.dart';
-
 import '../core/ad_config.dart';
 import '../core/ad_enums.dart';
 import '../core/ad_models.dart';
@@ -12,7 +10,6 @@ import '../utils/ad_reporter.dart';
 import '../utils/cancellation_token.dart';
 import 'ad_cache_service.dart';
 import 'ad_event_mapper.dart';
-import 'ad_lifecycle_manager.dart';
 
 /// Manages ad loading: preloading, waterfall loading, late-ad handling,
 /// and adapter-callback-to-event conversion.
@@ -22,7 +19,6 @@ class AdLoaderService {
   final AdConfigRepository _configRepo;
   final AdAdapterRegistry _adapterRegistry;
   final AdCacheService _cache;
-  final AdLifecycleManager _lifecycle;
   final AdEventMapper _eventMapper;
   final AdEventReporter _reporter;
 
@@ -30,19 +26,17 @@ class AdLoaderService {
     required AdConfigRepository configRepository,
     required AdAdapterRegistry adapterRegistry,
     required AdCacheService cache,
-    required AdLifecycleManager lifecycle,
     required AdEventMapper eventMapper,
     required AdEventReporter reporter,
   }) : _configRepo = configRepository,
        _adapterRegistry = adapterRegistry,
        _cache = cache,
-       _lifecycle = lifecycle,
        _eventMapper = eventMapper,
        _reporter = reporter;
 
   // --- Loading future dedup ---
   final Map<PlacementType, Future<bool>> _fullscreenLoadingFutures = {};
-  final Map<PlacementType, Future<bool>> _nativeLoadingFutures = {};
+  final Map<_NativeLoadScope, Future<bool>> _nativeLoadingFutures = {};
   final Map<PlacementType, Future<bool>> _bannerLoadingFutures = {};
 
   CancellationToken? _cancellationToken;
@@ -61,13 +55,37 @@ class AdLoaderService {
     required String eventName,
   }) async {
     final config = await _configRepo.getConfig();
-    if (!config.hasPlacement(placement)) {
-      var loaded = false;
-      for (final common in _configuredCommonPlacements(config, placement)) {
-        loaded = await preload(common, eventName: eventName) || loaded;
-      }
-      return loaded;
+    final inventoryPlacement = _fullscreenInventoryPlacement(config, placement);
+    final targets = <PlacementType>[
+      ?config.highValuePlacement,
+      inventoryPlacement,
+    ].where(config.hasPlacement).toSet();
+    if (targets.isEmpty) return false;
+
+    final results = await Future.wait(
+      targets.map((target) => preloadPlacement(target, eventName: eventName)),
+    );
+    return results.any((loaded) => loaded);
+  }
+
+  PlacementType _fullscreenInventoryPlacement(
+    AdConfig config,
+    PlacementType requested,
+  ) {
+    if (requested.name == 'open' ||
+        config.commonPlacements.contains(requested)) {
+      return requested;
     }
+    return config.commonPlacements.where(config.hasPlacement).firstOrNull ??
+        requested;
+  }
+
+  Future<bool> preloadPlacement(
+    PlacementType placement, {
+    required String eventName,
+  }) async {
+    final config = await _configRepo.getConfig();
+    if (!config.hasPlacement(placement)) return false;
 
     if (_fullscreenLoadingFutures.containsKey(placement)) {
       return _fullscreenLoadingFutures[placement]!;
@@ -88,29 +106,43 @@ class AdLoaderService {
   Future<bool> preloadNative(
     PlacementType placement, {
     required String eventName,
+    String? cacheId,
   }) async {
     final config = await _configRepo.getConfig();
     if (!config.hasPlacement(placement)) {
       var loaded = false;
       for (final common in _configuredCommonPlacements(config, placement)) {
-        loaded = await preloadNative(common, eventName: eventName) || loaded;
+        loaded =
+            await preloadNative(
+              common,
+              eventName: eventName,
+              cacheId: cacheId,
+            ) ||
+            loaded;
       }
       return loaded;
     }
 
-    if (_nativeLoadingFutures.containsKey(placement)) {
-      return _nativeLoadingFutures[placement]!;
+    final scope = _NativeLoadScope(placement, cacheId);
+    if (_nativeLoadingFutures.containsKey(scope)) {
+      return _nativeLoadingFutures[scope]!;
     }
 
     final targetCount = config.nativeCacheSizeFor(placement);
-    if (_cache.countFor(placement) >= targetCount) return true;
+    if (_cache.countFor(placement, cacheId: cacheId) >= targetCount) {
+      return true;
+    }
 
-    final future = _loadNative(placement, eventName: eventName);
-    _nativeLoadingFutures[placement] = future;
+    final future = _loadNative(
+      placement,
+      eventName: eventName,
+      cacheId: cacheId,
+    );
+    _nativeLoadingFutures[scope] = future;
     try {
       return await future;
     } finally {
-      _nativeLoadingFutures.remove(placement);
+      _nativeLoadingFutures.remove(scope);
     }
   }
 
@@ -180,9 +212,6 @@ class AdLoaderService {
       targetCountFor: (c) => c.fullscreenCacheSizeFor(placement),
       unitFilter: (config) {
         final policy = config.getPolicy(placement);
-        final hasTraditionalFullscreen = config
-            .getUnits(placement)
-            .any((unit) => unit.type.isFullscreen);
         return config
             .getUnits(placement)
             .where((u) => u.isValid)
@@ -190,32 +219,18 @@ class AdLoaderService {
             .where(
               (u) =>
                   u.type.isFullscreen ||
-                  (policy.isFullscreen &&
-                      u.type == AdType.native &&
-                      (!hasTraditionalFullscreen ||
-                          (policy.allowedTypes?.contains(AdType.native) ??
-                              false))),
+                  (policy.isFullscreen && u.type == AdType.native),
             )
             .where((u) => !_cache.hasSlotWithKey(placement, u.cacheKey));
       },
       adapterTypeFor: (u) => u.type.isNative ? AdType.native : u.type,
-      onUnitLoaded: (unit) {
-        _scheduleRefresh(
-          placement,
-          unit.refreshMinutes,
-          'fullscreen_$placement',
-          () async {
-            _cache.clear(placement);
-            unawaited(preload(placement, eventName: eventName));
-          },
-        );
-      },
     );
   }
 
   Future<bool> _loadNative(
     PlacementType placement, {
     required String eventName,
+    String? cacheId,
   }) async {
     return _waterfallLoad(
       placement: placement,
@@ -229,20 +244,17 @@ class AdLoaderService {
             .where((u) => u.isValid && policy.supports(u.type))
             .where((u) => !policy.isFullscreen || u.type.isDoubleNative)
             .where((u) => u.type.isNative)
-            .where((u) => !_cache.hasSlotWithKey(placement, u.cacheKey));
+            .where(
+              (u) => !_cache.hasSlotWithKey(
+                placement,
+                u.cacheKey,
+                cacheId: cacheId,
+              ),
+            );
       },
       adapterTypeFor: (_) => AdType.native,
-      onUnitLoaded: (unit) {
-        _scheduleRefresh(
-          placement,
-          unit.refreshMinutes,
-          'native_$placement',
-          () async {
-            _cache.clear(placement);
-            unawaited(preloadNative(placement, eventName: eventName));
-          },
-        );
-      },
+      cacheId: cacheId,
+      requireCompleteDoubleNative: true,
     );
   }
 
@@ -250,10 +262,6 @@ class AdLoaderService {
     PlacementType placement, {
     required String eventName,
   }) async {
-    final config = await _configRepo.getConfig();
-    final units = config.getUnits(placement);
-    final isGlobal = units.any((u) => u.type.isBanner);
-
     return _waterfallLoad(
       placement: placement,
       eventName: eventName,
@@ -269,19 +277,6 @@ class AdLoaderService {
             .where((u) => !_cache.hasSlotWithKey(placement, u.cacheKey));
       },
       adapterTypeFor: (_) => AdType.banner,
-      onUnitLoaded: isGlobal
-          ? (unit) {
-              _scheduleRefresh(
-                placement,
-                unit.refreshMinutes,
-                'banner_$placement',
-                () async {
-                  _cache.clear(placement);
-                  unawaited(preloadBanner(placement, eventName: eventName));
-                },
-              );
-            }
-          : null,
     );
   }
 
@@ -296,6 +291,8 @@ class AdLoaderService {
     required Iterable<AdUnitConfig> Function(AdConfig) unitFilter,
     required AdType Function(AdUnitConfig) adapterTypeFor,
     void Function(AdUnitConfig)? onUnitLoaded,
+    String? cacheId,
+    bool requireCompleteDoubleNative = false,
   }) async {
     final config = await _configRepo.getConfig();
     final targetCount = targetCountFor(config);
@@ -310,7 +307,7 @@ class AdLoaderService {
       return false;
     }
 
-    _cache.beginLoading(placement);
+    _cache.beginLoading(placement, cacheId: cacheId);
     final loadedSlots = <AdSlotLoaded>[];
     Object? lastError;
 
@@ -348,6 +345,7 @@ class AdLoaderService {
             unit.cacheKey,
             unit.source,
             targetCount,
+            cacheId,
           );
         },
       );
@@ -363,7 +361,7 @@ class AdLoaderService {
           loadedAt: DateTime.now(),
         );
         loadedSlots.add(slot);
-        _cache.addSlot(placement, slot);
+        _cache.addSlot(placement, slot, cacheId: cacheId);
         _cache.setAttribution(slot.ad, placement, eventName: eventName);
         onUnitLoaded?.call(unit);
 
@@ -377,7 +375,7 @@ class AdLoaderService {
         );
 
         if (loadedSlots.length >= targetCount) {
-          _cache.commitSlots(placement, loadedSlots);
+          _cache.commitSlots(placement, loadedSlots, cacheId: cacheId);
           return true;
         }
         continue;
@@ -395,7 +393,34 @@ class AdLoaderService {
       );
     }
 
-    _cache.commitSlots(placement, loadedSlots, lastError: lastError);
+    final requiredDoubleNativeCount = units
+        .where((unit) => unit.type.isDoubleNative)
+        .fold<int>(
+          0,
+          (count, unit) => unit.poolSize > count ? unit.poolSize : count,
+        );
+    if (requireCompleteDoubleNative &&
+        requiredDoubleNativeCount > 0 &&
+        loadedSlots.length < requiredDoubleNativeCount) {
+      for (final slot in loadedSlots) {
+        _adapterRegistry.get(slot.source, slot.type).dispose(slot.ad);
+        _cache.removeAttribution(slot.ad);
+      }
+      _cache.commitSlots(
+        placement,
+        const [],
+        lastError: lastError ?? 'double_native_incomplete',
+        cacheId: cacheId,
+      );
+      return false;
+    }
+
+    _cache.commitSlots(
+      placement,
+      loadedSlots,
+      lastError: lastError,
+      cacheId: cacheId,
+    );
 
     if (loadedSlots.isEmpty) {
       log.v(
@@ -414,9 +439,10 @@ class AdLoaderService {
     String cacheKey,
     AdSource source,
     int targetCount,
+    String? cacheId,
   ) {
-    if (_cache.hasSlotWithKey(placement, cacheKey) ||
-        _cache.countFor(placement) >= targetCount) {
+    if (_cache.hasSlotWithKey(placement, cacheKey, cacheId: cacheId) ||
+        _cache.countFor(placement, cacheId: cacheId) >= targetCount) {
       _adapterRegistry.get(source, type).dispose(ad);
       return;
     }
@@ -430,7 +456,7 @@ class AdLoaderService {
       cacheKey: cacheKey,
       loadedAt: DateTime.now(),
     );
-    _cache.addSlot(placement, slot);
+    _cache.addSlot(placement, slot, cacheId: cacheId);
   }
 
   // --- Callback wrapping ---
@@ -446,13 +472,11 @@ class AdLoaderService {
       // Look up attribution from cache by ad object
       final attr = _cache.getAttribution(callback.ad);
       final p = attr?.placement ?? placement;
-      final label = attr?.placementLabel;
       final en = attr?.eventName ?? eventName;
 
       final event = _eventMapper.map(
         callback,
         placement: p,
-        placementLabel: label,
         eventName: en,
         adType: unit.type,
         source: unit.source,
@@ -474,15 +498,6 @@ class AdLoaderService {
     );
   }
 
-  void _scheduleRefresh(
-    PlacementType placement,
-    int? minutes,
-    String key,
-    VoidCallback onRefresh,
-  ) {
-    _lifecycle.scheduleRefresh('${placement.name}_$key', minutes, onRefresh);
-  }
-
   void _reportEvent(
     AdEventType type,
     PlacementType p,
@@ -490,13 +505,11 @@ class AdLoaderService {
     AdSource? s,
     String? id, {
     String? errorReason,
-    String? placementLabel,
     required String eventName,
   }) {
     final event = AdEvent(
       eventType: type,
       placement: p,
-      placementLabel: placementLabel,
       adType: t,
       source: s,
       adUnitId: id,
@@ -507,4 +520,20 @@ class AdLoaderService {
     log.event(event);
     _reporter.report(event);
   }
+}
+
+class _NativeLoadScope {
+  const _NativeLoadScope(this.placement, this.cacheId);
+
+  final PlacementType placement;
+  final String? cacheId;
+
+  @override
+  bool operator ==(Object other) =>
+      other is _NativeLoadScope &&
+      other.placement == placement &&
+      other.cacheId == cacheId;
+
+  @override
+  int get hashCode => Object.hash(placement, cacheId);
 }

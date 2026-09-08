@@ -8,7 +8,6 @@ class AdEventMapper {
   AdEvent map(
     AdRawCallback callback, {
     PlacementType? placement,
-    String? placementLabel,
     required String eventName,
     AdType? adType,
     AdSource? source,
@@ -19,7 +18,6 @@ class AdEventMapper {
         return AdEvent(
           eventType: AdEventType.showSuccess,
           placement: placement,
-          placementLabel: placementLabel,
           adType: adType,
           source: source,
           adUnitId: adUnitId,
@@ -36,7 +34,6 @@ class AdEventMapper {
         return AdEvent(
           eventType: AdEventType.income,
           placement: placement,
-          placementLabel: placementLabel,
           adType: adType,
           source: source,
           adUnitId: adUnitId,
@@ -51,7 +48,6 @@ class AdEventMapper {
         return AdEvent(
           eventType: AdEventType.clicked,
           placement: placement,
-          placementLabel: placementLabel,
           adType: adType,
           source: source,
           adUnitId: adUnitId,
@@ -64,7 +60,6 @@ class AdEventMapper {
         return AdEvent(
           eventType: AdEventType.close,
           placement: placement,
-          placementLabel: placementLabel,
           adType: adType,
           source: source,
           adUnitId: adUnitId,
@@ -77,7 +72,6 @@ class AdEventMapper {
         return AdEvent(
           eventType: AdEventType.showSuccess,
           placement: placement,
-          placementLabel: placementLabel,
           adType: adType,
           source: source,
           adUnitId: adUnitId,
@@ -94,7 +88,6 @@ class AdEventMapper {
         return AdEvent(
           eventType: AdEventType.showFail,
           placement: placement,
-          placementLabel: placementLabel,
           adType: adType,
           source: source,
           adUnitId: adUnitId,

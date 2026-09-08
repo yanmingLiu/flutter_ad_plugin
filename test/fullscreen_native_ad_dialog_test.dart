@@ -17,7 +17,7 @@ void main() {
                   MaterialPageRoute<void>(
                     builder: (_) => FullscreenNativeAdDialog(
                       placement: const PlacementType('fullscreen_native'),
-                      placementLabel: 'fullscreen_native',
+                      eventName: 'fullscreen_native',
                       ad: Object(),
                       clickTracker: null,
                       closePassThroughPercent: 0,

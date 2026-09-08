@@ -87,7 +87,6 @@ abstract class _AdmobFullscreenAdapter<TAd extends AdWithoutView>
   Future<AdShowResult> show({
     required PlacementType placement,
     BuildContext? context,
-    String? placementLabel,
     required String eventName,
     required Object ad,
     VoidCallback? onAdShowed,
@@ -119,7 +118,9 @@ abstract class _AdmobFullscreenAdapter<TAd extends AdWithoutView>
         onAdFailedToShowFullScreenContent: (ad, error) {
           ad.dispose();
           if (!completer.isCompleted) {
-            completer.complete(AdShowResult.failure(error));
+            completer.complete(
+              AdShowResult.failure(error: error, errorReason: error.message),
+            );
           }
           onCallback?.call(
             AdShowFailedCallback(
@@ -149,7 +150,9 @@ abstract class _AdmobFullscreenAdapter<TAd extends AdWithoutView>
     } catch (e) {
       fullscreenAd.dispose();
       if (!completer.isCompleted) {
-        completer.complete(AdShowResult.failure(e));
+        completer.complete(
+          AdShowResult.failure(error: e, errorReason: e.toString()),
+        );
       }
       onCallback?.call(
         AdShowFailedCallback(fullscreenAd, null, e.toString(), null),
@@ -267,12 +270,50 @@ class AdmobRewardedAdapter extends _AdmobFullscreenAdapter<RewardedAd> {
   }
 }
 
+/// AdMob 插页式激励广告适配器。
+class AdmobRewardedInterstitialAdapter
+    extends _AdmobFullscreenAdapter<RewardedInterstitialAd> {
+  @override
+  AdType get type => AdType.rewardedInterstitial;
+
+  @override
+  String get _loadTimeoutName => 'rewarded_interstitial';
+
+  @override
+  Future<void> _loadSdkAd({
+    required String adUnitId,
+    required void Function(RewardedInterstitialAd ad) onLoaded,
+    required void Function(LoadAdError error) onFailed,
+  }) {
+    return RewardedInterstitialAd.load(
+      adUnitId: adUnitId,
+      request: const AdRequest(),
+      rewardedInterstitialAdLoadCallback: RewardedInterstitialAdLoadCallback(
+        onAdLoaded: onLoaded,
+        onAdFailedToLoad: onFailed,
+      ),
+    );
+  }
+
+  @override
+  void _setFullScreenContentCallback(
+    RewardedInterstitialAd ad,
+    FullScreenContentCallback<RewardedInterstitialAd> callback,
+  ) => ad.fullScreenContentCallback = callback;
+
+  @override
+  Future<void> _showSdkAd(RewardedInterstitialAd ad) {
+    return ad.show(onUserEarnedReward: (ad, item) {});
+  }
+}
+
 /// AdMob 原生广告适配器
 ///
 /// No longer maintains static attribution maps. Attribution is managed by
 /// the engine's [AdCacheService]. Emits [AdRawCallback] via [onCallback].
 class AdmobNativeAdapter implements AdTypeAdapter, NativeAdClickTracker {
   static const _fullScreenFactoryId = 'fullScreenNative';
+  static const _homeFactoryId = 'homeListTile';
 
   final Map<NativeAd, _NativeAdContext> _contexts = {};
   final Map<NativeAd, Set<VoidCallback>> _clickListeners = {};
@@ -374,7 +415,7 @@ class AdmobNativeAdapter implements AdTypeAdapter, NativeAdClickTracker {
     if (renderAsFullscreen) {
       ad = NativeAd(
         adUnitId: unit.id,
-        factoryId: _fullScreenFactoryId,
+        factoryId: unit.factoryId ?? _fullScreenFactoryId,
         nativeAdOptions: NativeAdOptions(
           adChoicesPlacement: AdChoicesPlacement.topLeftCorner,
         ),
@@ -382,13 +423,9 @@ class AdmobNativeAdapter implements AdTypeAdapter, NativeAdClickTracker {
         listener: listener,
       );
     } else {
-      final templateType = unit.templateType?.toLowerCase() == 'small'
-          ? TemplateType.small
-          : TemplateType.medium;
-
       ad = NativeAd(
         adUnitId: unit.id,
-        nativeTemplateStyle: NativeTemplateStyle(templateType: templateType),
+        factoryId: unit.factoryId ?? _homeFactoryId,
         request: const AdRequest(),
         listener: listener,
       );
@@ -413,7 +450,6 @@ class AdmobNativeAdapter implements AdTypeAdapter, NativeAdClickTracker {
   Future<AdShowResult> show({
     required PlacementType placement,
     BuildContext? context,
-    String? placementLabel,
     required String eventName,
     required Object ad,
     VoidCallback? onAdShowed,
@@ -590,7 +626,6 @@ class AdmobBannerAdapter implements AdTypeAdapter {
   Future<AdShowResult> show({
     required PlacementType placement,
     BuildContext? context,
-    String? placementLabel,
     required String eventName,
     required Object ad,
     VoidCallback? onAdShowed,

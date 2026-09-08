@@ -13,23 +13,8 @@ class PlacementPolicy {
   /// Whether this placement enters the fullscreen show path.
   final bool isFullscreen;
 
-  /// Whether same-placement cooldown is enforced.
-  final bool applySamePlacementCd;
-
-  /// Whether cross-placement (global) cooldown is enforced.
-  final bool applyDifferentPlacementCd;
-
-  /// Whether showing this placement marks the global cooldown timestamp.
-  final bool contributesToGlobalCooldown;
-
   /// Whether `onAdNotReady` is triggered when no ad is cached.
   final bool showNotReadyToast;
-
-  /// Whether [show] triggers a preload when the cache is empty.
-  final bool waitForLoadOnShow;
-
-  /// Whether to prefer ads from the high-value placement.
-  final bool preferHighValueOnShow;
 
   /// Custom message for `onAdNotReady` callback.
   final String? notReadyMsg;
@@ -39,12 +24,7 @@ class PlacementPolicy {
 
   const PlacementPolicy({
     required this.isFullscreen,
-    required this.applySamePlacementCd,
-    required this.applyDifferentPlacementCd,
-    required this.contributesToGlobalCooldown,
-    required this.showNotReadyToast,
-    required this.waitForLoadOnShow,
-    required this.preferHighValueOnShow,
+    this.showNotReadyToast = false,
     this.notReadyMsg,
     this.allowedTypes,
   });
@@ -54,16 +34,13 @@ class PlacementPolicy {
     AdConfig config,
     PlacementType placement,
   ) {
+    final isSharedFullscreenPlacement =
+        config.commonPlacements.contains(placement) ||
+        config.highValuePlacement == placement;
     return PlacementPolicy(
-      isFullscreen: config
-          .getUnits(placement)
-          .any((unit) => unit.type.isFullscreen),
-      applySamePlacementCd: false,
-      applyDifferentPlacementCd: false,
-      contributesToGlobalCooldown: false,
-      showNotReadyToast: false,
-      waitForLoadOnShow: placement.name != 'open',
-      preferHighValueOnShow: placement.name != 'open',
+      isFullscreen:
+          isSharedFullscreenPlacement ||
+          config.getUnits(placement).any((unit) => unit.type.isFullscreen),
     );
   }
 

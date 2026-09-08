@@ -65,9 +65,7 @@ void main() {
     });
 
     test('error and cacheKey are optional', () {
-      final slot = AdSlotFailed(
-        placement: const PlacementType('home'),
-      );
+      final slot = AdSlotFailed(placement: const PlacementType('home'));
       expect(slot.error, isNull);
       expect(slot.cacheKey, isNull);
     });
@@ -103,15 +101,31 @@ void main() {
 
   group('AdShowResult', () {
     test('success has shown=true and no error', () {
-      final result = AdShowResult.success();
+      final result = AdShowResult.success(
+        requestedPlacement: const PlacementType('open'),
+        shownPlacement: const PlacementType('level_h'),
+        source: AdSource.admob,
+        type: AdType.interstitial,
+        adUnitId: 'unit-1',
+      );
       expect(result.shown, isTrue);
       expect(result.error, isNull);
+      expect(result.requestedPlacement, const PlacementType('open'));
+      expect(result.shownPlacement, const PlacementType('level_h'));
+      expect(result.source, AdSource.admob);
+      expect(result.type, AdType.interstitial);
+      expect(result.adUnitId, 'unit-1');
     });
 
     test('failure has shown=false and error', () {
-      final result = AdShowResult.failure(Exception('show failed'));
+      final result = AdShowResult.failure(
+        error: Exception('show failed'),
+        requestedPlacement: const PlacementType('open'),
+        errorReason: 'show_failed',
+      );
       expect(result.shown, isFalse);
       expect(result.error, isNotNull);
+      expect(result.errorReason, 'show_failed');
     });
   });
 
@@ -119,11 +133,9 @@ void main() {
     test('stores all attribution fields', () {
       final attr = AdAttribution(
         placement: const PlacementType('home'),
-        placementLabel: 'inbox_top',
         eventName: 'first_load',
       );
       expect(attr.placement.name, 'home');
-      expect(attr.placementLabel, 'inbox_top');
       expect(attr.eventName, 'first_load');
     });
 
@@ -133,11 +145,9 @@ void main() {
         eventName: 'initial',
       );
       attr.placement = const PlacementType('home');
-      attr.placementLabel = 'updated';
       attr.eventName = 'changed';
 
       expect(attr.placement.name, 'home');
-      expect(attr.placementLabel, 'updated');
       expect(attr.eventName, 'changed');
     });
   });

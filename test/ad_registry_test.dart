@@ -31,18 +31,13 @@ class _FakeAdapter implements AdTypeAdapter {
     void Function(AdRawCallback)? onCallback,
     void Function(Object ad, AdType type, String adUnitId)? onLateAdLoaded,
   }) async {
-    return AdLoadResult.success(
-      ad: Object(),
-      type: _type,
-      adUnitId: unit.id,
-    );
+    return AdLoadResult.success(ad: Object(), type: _type, adUnitId: unit.id);
   }
 
   @override
   Future<AdShowResult> show({
     required PlacementType placement,
     BuildContext? context,
-    String? placementLabel,
     required String eventName,
     required Object ad,
     VoidCallback? onAdShowed,
@@ -90,10 +85,21 @@ void main() {
       );
     });
 
-    test('throws StateError for unregistered adapter', () {
-      final registry = AdAdapterRegistry(
-        [_FakeAdapter(AdSource.admob, AdType.interstitial)],
+    test('supports rewarded interstitial adapter type', () {
+      final adapter = _FakeAdapter(AdSource.admob, AdType.rewardedInterstitial);
+      final registry = AdAdapterRegistry([adapter]);
+
+      expect(
+        registry.get(AdSource.admob, AdType.rewardedInterstitial),
+        same(adapter),
       );
+      expect(AdType.rewardedInterstitial.isFullscreen, isTrue);
+    });
+
+    test('throws StateError for unregistered adapter', () {
+      final registry = AdAdapterRegistry([
+        _FakeAdapter(AdSource.admob, AdType.interstitial),
+      ]);
       expect(
         () => registry.get(AdSource.admob, AdType.open),
         throwsA(isA<StateError>()),

@@ -11,14 +11,9 @@ import 'ad_enums.dart';
 /// 使后续生命周期回调（click、impression、paid）能被正确归因。
 class AdAttribution {
   PlacementType placement;
-  String? placementLabel;
   String eventName;
 
-  AdAttribution({
-    required this.placement,
-    this.placementLabel,
-    required this.eventName,
-  });
+  AdAttribution({required this.placement, required this.eventName});
 }
 
 /// Sealed hierarchy for ad slot states in cache.
@@ -62,11 +57,7 @@ class AdSlotFailed extends AdSlotState {
   final String? cacheKey;
   final Object? error;
 
-  AdSlotFailed({
-    required super.placement,
-    this.cacheKey,
-    this.error,
-  });
+  AdSlotFailed({required super.placement, this.cacheKey, this.error});
 }
 
 /// Ad load result returned by [AdTypeAdapter.load].
@@ -94,12 +85,56 @@ class AdLoadResult<TAd extends Object> {
 /// Ad show result returned by [AdTypeAdapter.show].
 class AdShowResult {
   final bool shown;
+  final PlacementType? requestedPlacement;
+  final PlacementType? shownPlacement;
+  final AdSource? source;
+  final AdType? type;
+  final String? adUnitId;
+  final String? errorReason;
   final Object? error;
 
-  const AdShowResult({required this.shown, this.error});
+  const AdShowResult({
+    required this.shown,
+    this.requestedPlacement,
+    this.shownPlacement,
+    this.source,
+    this.type,
+    this.adUnitId,
+    this.errorReason,
+    this.error,
+  });
 
-  factory AdShowResult.success() => const AdShowResult(shown: true);
+  factory AdShowResult.success({
+    PlacementType? requestedPlacement,
+    PlacementType? shownPlacement,
+    AdSource? source,
+    AdType? type,
+    String? adUnitId,
+  }) => AdShowResult(
+    shown: true,
+    requestedPlacement: requestedPlacement,
+    shownPlacement: shownPlacement,
+    source: source,
+    type: type,
+    adUnitId: adUnitId,
+  );
 
-  factory AdShowResult.failure([Object? error]) =>
-      AdShowResult(shown: false, error: error);
+  factory AdShowResult.failure({
+    Object? error,
+    PlacementType? requestedPlacement,
+    PlacementType? shownPlacement,
+    AdSource? source,
+    AdType? type,
+    String? adUnitId,
+    String? errorReason,
+  }) => AdShowResult(
+    shown: false,
+    requestedPlacement: requestedPlacement,
+    shownPlacement: shownPlacement,
+    source: source,
+    type: type,
+    adUnitId: adUnitId,
+    errorReason: errorReason,
+    error: error,
+  );
 }

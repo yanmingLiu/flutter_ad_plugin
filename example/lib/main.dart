@@ -3,31 +3,31 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_ad_plugin/flutter_ad_plugin.dart';
 
+import 'demo_components.dart';
 import 'integration_templates.dart';
 import 'utils/ad_lifecycle.dart';
 
 // ─── 广告位 ─────────────────────────────────────────────────────
 const openPlacement = PlacementType('open');
 const homePlacement = PlacementType('home');
-const messagePlacement = PlacementType('message');
-const fullscreenNativePlacement = PlacementType('fullscreen_native');
-const playMiddlePlacement = PlacementType('play_middle');
-const levelHPlacement = PlacementType('level_h');
 const behaviorPlacement = PlacementType('behavior');
+const behavior2Placement = PlacementType('behavior2');
+const playMiddlePlacement = PlacementType('play_middle');
 const bottomBannerPlacement = PlacementType('bottom_banner');
 const inlineBannerPlacement = PlacementType('article_inline_banner');
 
 const coldStartPlacements = [
-  homePlacement,
-  messagePlacement,
-  fullscreenNativePlacement,
-  playMiddlePlacement,
-  levelHPlacement,
+  behaviorPlacement,
+  behavior2Placement,
   bottomBannerPlacement,
+  inlineBannerPlacement,
 ];
+const homeCacheIds = ['home_feed', 'home_following', 'home_profile'];
 
 // ─── 全局插件实例 ──────────────────────────────────────────────
 late final AdPlugin adPlugin;
+late final Future<bool> coldStartOpenPreload;
+final ValueNotifier<AdEvent?> latestAdEvent = ValueNotifier(null);
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -35,7 +35,9 @@ Future<void> main() async {
   adPlugin = AdPlugin(
     config: AdPluginConfig(
       configRepository: MyConfigRepository(),
-      eventReporter: MyAdEventReporter(),
+      eventReporter: MyAdEventReporter(
+        onEvent: (event) => latestAdEvent.value = event,
+      ),
       placementPolicies: buildPlacementPolicies(),
       onAdNotReady: _onAdNotReady,
       verboseLogging: true,
@@ -46,9 +48,32 @@ Future<void> main() async {
 
   await adPlugin.init();
 
-  // 冷启动后台预加载：开屏播放时不阻塞
+  // open 的预加载会并发处理 level_h 和 open，启动页等待该链路后再展示。
+  coldStartOpenPreload = adPlugin.preload(
+    openPlacement,
+    eventName: 'cold_start',
+  );
+
+  // 其他广告位继续后台预加载，不阻塞冷启动开屏链路。
   unawaited(
-    adPlugin.preloadPlacements(coldStartPlacements, eventName: 'open_cold'),
+    adPlugin.preloadPlacements(coldStartPlacements, eventName: 'cold_start'),
+  );
+  for (final cacheId in homeCacheIds) {
+    unawaited(
+      adPlugin.loadNative(
+        homePlacement,
+        eventName: 'cold_start',
+        cacheId: cacheId,
+      ),
+    );
+  }
+  unawaited(adPlugin.preload(playMiddlePlacement, eventName: 'cold_start'));
+  unawaited(
+    adPlugin.loadNative(
+      playMiddlePlacement,
+      eventName: 'cold_start',
+      cacheId: 'demo',
+    ),
   );
 
   runApp(const AdPluginDemoApp());
@@ -95,8 +120,16 @@ class _LaunchGatePageState extends State<LaunchGatePage> {
   }
 
   Future<void> _enterApp() async {
+    setState(() => _status = '正在加载冷启动开屏广告...');
+    await coldStartOpenPreload;
+    if (!mounted) return;
+
     setState(() => _status = '正在展示冷启动开屏广告...');
-    await adPlugin.show(openPlacement, eventName: 'open_cold');
+    await adPlugin.show(
+      openPlacement,
+      context: context,
+      eventName: 'open_cold',
+    );
 
     if (!mounted) return;
     Navigator.of(
@@ -134,9 +167,9 @@ class _DemoHomePageState extends State<DemoHomePage> {
   Timer? _toastTimer;
   late final AdLifecycle _lifecycle;
 
-  // 原生广告
-  Object? _nativeAd;
-  List<Object> _nativeAds = const [];
+  // play_middle 双原生
+  List<Object> _playMiddleAds = const [];
+  bool _loadingPlayMiddle = false;
 
   // Banner 广告
   Object? _bannerAd;
@@ -156,8 +189,7 @@ class _DemoHomePageState extends State<DemoHomePage> {
     );
     _lifecycle.start();
 
-    // 预加载原生和 Banner
-    unawaited(_initNativeAd());
+    // 冷启动已发起全量预加载，这里只把 Banner 缓存绑定到页面。
     unawaited(_initBannerAd());
   }
 
@@ -192,57 +224,56 @@ class _DemoHomePageState extends State<DemoHomePage> {
     );
     setState(() {
       _showingFullscreen = false;
-      _fsStatus = shown ? '广告已关闭 ✓' : '无广告可展示 ✗';
+      _fsStatus = shown.shown ? '广告已关闭 ✓' : '无广告可展示 ✗';
     });
   }
 
-  // ── 原生广告 ──────────────────────────────────────────────
-
-  Future<void> _initNativeAd() async {
-    const eventName = 'home_show';
-    var ad = adPlugin.getNativeAd(homePlacement, eventName: eventName);
-    if (ad == null) {
-      await adPlugin.loadNative(homePlacement, eventName: 'first_load');
-      ad = adPlugin.getNativeAd(homePlacement, eventName: eventName);
-    }
-    final ads = adPlugin.getNativeAds(
-      homePlacement,
-      count: 2,
-      eventName: eventName,
-    );
-    if (mounted) {
-      setState(() {
-        _nativeAd = ad;
-        _nativeAds = ads;
-      });
-    }
-  }
-
-  Future<void> _reloadNative() async {
-    _toastMessage('正在加载原生广告...');
-    await adPlugin.loadNative(homePlacement, eventName: 'manual_load');
-    final ad = adPlugin.getNativeAd(homePlacement, eventName: 'home_show');
-    final ads = adPlugin.getNativeAds(
-      homePlacement,
-      count: 2,
-      eventName: 'home_show',
-    );
-    if (mounted) {
-      setState(() {
-        _nativeAd = ad;
-        _nativeAds = ads;
-      });
-      _toastMessage(ad != null ? '原生广告加载成功 ✓' : '加载失败 ✗');
-    }
-  }
-
-  void _disposeNative() {
-    adPlugin.disposeNativeAd(homePlacement);
+  Future<void> _showFullscreenSequence() async {
+    if (_showingFullscreen) return;
     setState(() {
-      _nativeAd = null;
-      _nativeAds = [];
+      _showingFullscreen = true;
+      _fsStatus = '正在连续展示全屏广告...';
     });
-    _toastMessage('原生广告缓存已清除');
+    final shown = await adPlugin.showSequence(
+      behaviorPlacement,
+      context: context,
+      eventName: 'behavior_sequence_show',
+      closePassThroughPercent: 0,
+    );
+    if (!mounted) return;
+    setState(() {
+      _showingFullscreen = false;
+      _fsStatus = shown ? '连续广告已关闭 ✓' : '无广告可展示 ✗';
+    });
+  }
+
+  // ── play_middle 双原生 ───────────────────────────────────
+
+  Future<void> _loadPlayMiddle() async {
+    if (_loadingPlayMiddle) return;
+    setState(() => _loadingPlayMiddle = true);
+    final loaded = await adPlugin.loadNative(
+      playMiddlePlacement,
+      eventName: 'play_middle_double_native_load',
+      cacheId: 'demo',
+    );
+    final ads = adPlugin.getNativeAds(
+      playMiddlePlacement,
+      count: 2,
+      eventName: 'play_middle_double_native_show',
+      cacheId: 'demo',
+    );
+    if (!mounted) return;
+    setState(() {
+      _loadingPlayMiddle = false;
+      _playMiddleAds = ads;
+    });
+    _toastMessage(loaded && ads.length == 2 ? '双原生两条素材均已就绪' : '双原生未完整加载，不展示');
+  }
+
+  void _disposePlayMiddle() {
+    adPlugin.disposeNativeAd(playMiddlePlacement, cacheId: 'demo');
+    setState(() => _playMiddleAds = const []);
   }
 
   // ── Banner 广告 ───────────────────────────────────────────
@@ -262,10 +293,12 @@ class _DemoHomePageState extends State<DemoHomePage> {
   }
 
   void _disposeBanner() {
-    adPlugin.disposeBannerAd(bottomBannerPlacement);
     setState(() {
       _bannerAd = null;
       _bannerReady = false;
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      adPlugin.disposeBannerAd(bottomBannerPlacement);
     });
     _toastMessage('全局 Banner 已销毁');
   }
@@ -312,96 +345,93 @@ class _DemoHomePageState extends State<DemoHomePage> {
           ListView(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 40),
             children: [
+              const AdRuleSummary(),
+              const SizedBox(height: 16),
+              ValueListenableBuilder<AdEvent?>(
+                valueListenable: latestAdEvent,
+                builder: (context, event, _) {
+                  final isFailure = event?.eventType == AdEventType.showFail;
+                  return ListTile(
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 4),
+                    leading: Icon(
+                      isFailure
+                          ? Icons.error_outline
+                          : Icons.monitor_heart_outlined,
+                      color: isFailure
+                          ? Theme.of(context).colorScheme.error
+                          : Theme.of(context).colorScheme.primary,
+                    ),
+                    title: const Text('最近广告事件'),
+                    subtitle: Text(
+                      event == null
+                          ? '等待事件'
+                          : '${event.eventType?.name} · ${event.eventName}'
+                                '${event.errorReason == null ? '' : ' · ${event.errorReason}'}',
+                    ),
+                  );
+                },
+              ),
+              const SizedBox(height: 8),
               _sectionHeader('全屏广告', tt),
               _demoCard(
-                '开屏广告（冷启动回放）',
-                '模拟冷启动时展示开屏广告，展示 loading 过渡。',
+                '全屏广告',
+                '统一入口：优先展示 level_h，无高价缓存时展示 behavior 缓存。',
                 onPress: () => _showFullscreen(
-                  openPlacement,
-                  eventName: 'open_cold_replay',
+                  behaviorPlacement,
+                  eventName: 'behavior_show',
                 ),
-                label: '展示开屏',
+                label: '展示全屏广告',
                 status: _fsStatus,
                 loading: _showingFullscreen,
               ),
+              const SizedBox(height: 8),
               _demoCard(
-                '开屏广告（热启动回放）',
-                '模拟 App 回到前台时触发。也可切后台再切回来测试。',
-                onPress: () => _showFullscreen(
-                  openPlacement,
-                  eventName: 'open_hot_replay',
-                ),
-                label: '展示热开屏',
+                '连续全屏广告',
+                '按 behavior、behavior2 双轮策略展示，每轮都优先检查 level_h。',
+                onPress: _showFullscreenSequence,
+                label: '连续展示全屏广告',
                 status: _fsStatus,
                 loading: _showingFullscreen,
-              ),
-              _demoCard(
-                '插屏广告',
-                'message 广告位：开启高价位替换 + toast 提示。',
-                onPress: () => _showFullscreen(messagePlacement),
-                label: '展示插屏',
-              ),
-              _demoCard(
-                '全屏原生广告',
-                'fullscreen_native 广告位：使用 fullScreenNative factory 全屏展示 NativeAd。',
-                onPress: () => _showFullscreen(
-                  fullscreenNativePlacement,
-                  eventName: 'fullscreen_native_demo',
-                ),
-                label: '展示原生',
-              ),
-              _demoCard(
-                '激励广告（公共兜底）',
-                '"behavior2" 通过 common_placements 兜底为激励视频。',
-                onPress: () =>
-                    _showFullscreen(behaviorPlacement, eventName: 'behavior'),
-                label: '展示激励视频',
-              ),
-              _demoCard(
-                '连续展示（showSequence）',
-                '同一广告位缓存两个广告时逐个弹出；仅一个时自动补货再弹。',
-                onPress: () async {
-                  if (_showingFullscreen) return;
-                  setState(() {
-                    _showingFullscreen = true;
-                    _fsStatus = 'showSequence 进行中...';
-                  });
-                  final ok = await adPlugin.showSequence(
-                    playMiddlePlacement,
-                    eventName: 'play_middle_demo',
-                    closePassThroughPercent: 0,
-                  );
-                  setState(() {
-                    _showingFullscreen = false;
-                    _fsStatus = ok ? 'showSequence 完成 ✓' : 'showSequence 失败 ✗';
-                  });
-                },
-                label: '连续展示',
-              ),
-              _demoCard(
-                '高价位替换（level_h）',
-                'level_h 广告位优先使用高价位缓存，提高 eCPM。',
-                onPress: () => _showFullscreen(levelHPlacement),
-                label: '展示 Level-H',
               ),
               const SizedBox(height: 8),
               Text(
-                '插屏/激励/showSequence 依赖预加载的缓存广告。'
-                '缓存为空 + waitForLoadOnShow=true 时插件会即时加载后再展示。',
+                '无缓存时上报 no_cache 并异步补载；CD 时间内上报 in_cd。',
                 style: tt.bodySmall?.copyWith(
                   color: Theme.of(context).colorScheme.outline,
                 ),
               ),
 
               const SizedBox(height: 24),
-              _sectionHeader('原生广告（$homePlacement）', tt),
-              _inlineNativeCards(),
+              _sectionHeader('Home 多场景独立缓存', tt),
+              const HomeCacheTabsDemo(),
+
+              const SizedBox(height: 24),
+              _sectionHeader('play_middle 瀑布流', tt),
+              _demoCard(
+                '双原生候选',
+                'ad_id 和 ad_id2 必须同时加载成功；任意一条失败都不会展示半组广告。',
+                onPress: _loadingPlayMiddle
+                    ? null
+                    : (_playMiddleAds.length == 2
+                          ? _disposePlayMiddle
+                          : _loadPlayMiddle),
+                label: _playMiddleAds.length == 2 ? '销毁' : '加载双原生',
+                status: _loadingPlayMiddle
+                    ? '正在依次加载两条素材...'
+                    : '完整缓存：${_playMiddleAds.length}/2',
+                trailing: _playMiddleAds.length == 2
+                    ? adPlugin.widgetFactory.dualNativeWidget(
+                        _playMiddleAds,
+                        height: 560,
+                      )
+                    : null,
+              ),
 
               const SizedBox(height: 24),
               _sectionHeader('全局 Banner（$bottomBannerPlacement）', tt),
               _demoCard(
                 '全局 Banner',
-                '自动预加载 + 每 30 分钟自动刷新 + 跨页面持久。',
+                '全局缓存，跨页面持久；可手动加载和销毁。',
                 trailing: _bannerReady && _bannerAd != null
                     ? adPlugin.widgetFactory.bannerWidget(_bannerAd!)
                     : const Text(
@@ -417,7 +447,7 @@ class _DemoHomePageState extends State<DemoHomePage> {
                         );
                       },
                 label: _bannerReady ? '销毁' : '加载',
-                status: '全局 Banner：每 30 分钟自动刷新',
+                status: _bannerReady ? '全局 Banner 已缓存' : '暂无缓存',
               ),
 
               const SizedBox(height: 24),
@@ -433,17 +463,6 @@ class _DemoHomePageState extends State<DemoHomePage> {
                 label: '打开内联 Banner 页面',
                 status:
                     'initState → loadBanner → 展示 → dispose → disposeBannerAd',
-              ),
-
-              const SizedBox(height: 24),
-              _sectionHeader('广告位策略配置', tt),
-              Padding(
-                padding: const EdgeInsets.only(bottom: 8),
-                child: Text(
-                  'open：同广告位 CD + 全局 CD 均启用\n'
-                  'message：preferHighValue=true，showNotReadyToast=true',
-                  style: tt.bodySmall?.copyWith(fontFamily: 'monospace'),
-                ),
               ),
 
               const SizedBox(height: 24),
@@ -568,46 +587,182 @@ class _DemoHomePageState extends State<DemoHomePage> {
       ),
     );
   }
+}
 
-  Widget _inlineNativeCards() {
+class HomeCacheTabsDemo extends StatefulWidget {
+  const HomeCacheTabsDemo({super.key});
+
+  @override
+  State<HomeCacheTabsDemo> createState() => _HomeCacheTabsDemoState();
+}
+
+class _HomeCacheTabsDemoState extends State<HomeCacheTabsDemo> {
+  static const _cacheIds = homeCacheIds;
+  static const _labels = ['推荐', '关注', '我的'];
+
+  int _selected = 0;
+  final List<bool> _mounted = [true, true, true];
+  final List<int> _revisions = [0, 0, 0];
+
+  @override
+  Widget build(BuildContext context) {
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        _demoCard(
-          '加载 / 刷新原生广告',
-          '手动触发 preloadNative。缓存有广告后可点刷新重新加载。',
-          onPress: () => _nativeAd == null ? _initNativeAd() : _reloadNative(),
-          label: _nativeAd == null ? '加载' : '刷新',
-          status: _nativeAd != null
-              ? '缓存池: ${_nativeAds.length} 个广告'
-              : '暂无原生广告缓存',
+        SegmentedButton<int>(
+          segments: [
+            for (var i = 0; i < _labels.length; i++)
+              ButtonSegment(value: i, label: Text(_labels[i])),
+          ],
+          selected: {_selected},
+          onSelectionChanged: (selection) {
+            setState(() => _selected = selection.single);
+          },
         ),
-        _demoCard(
-          '销毁原生广告缓存',
-          '取消自动刷新定时器，清空所有已缓存的原生广告。',
-          onPress: _nativeAd != null ? _disposeNative : null,
-          label: '销毁',
-          destructive: true,
-        ),
-        // 双原生优先，单个时才展示单原生（避免同一 AdWidget 重复渲染）
-        if (_nativeAds.length >= 2) ...[
-          const SizedBox(height: 4),
-          Text('双原生广告', style: Theme.of(context).textTheme.labelMedium),
-          ClipRRect(
+        const SizedBox(height: 12),
+        DecoratedBox(
+          decoration: BoxDecoration(
+            border: Border.all(
+              color: Theme.of(context).colorScheme.outlineVariant,
+            ),
             borderRadius: BorderRadius.circular(8),
-            child: adPlugin.widgetFactory.dualNativeWidget(
-              _nativeAds.take(2).toList(),
-              height: 560,
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: IndexedStack(
+              index: _selected,
+              children: [
+                for (var i = 0; i < _cacheIds.length; i++)
+                  _mounted[i]
+                      ? _HomeNativeScene(
+                          key: ValueKey('${_cacheIds[i]}_${_revisions[i]}'),
+                          cacheId: _cacheIds[i],
+                        )
+                      : _DestroyedHomeScene(
+                          cacheId: _cacheIds[i],
+                          onRestore: () {
+                            setState(() {
+                              _revisions[i]++;
+                              _mounted[i] = true;
+                            });
+                          },
+                        ),
+              ],
             ),
           ),
-        ] else if (_nativeAd != null) ...[
-          const SizedBox(height: 4),
-          Text('单原生广告', style: Theme.of(context).textTheme.labelMedium),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(8),
-            child: adPlugin.widgetFactory.nativeWidget(_nativeAd!, height: 280),
+        ),
+        const SizedBox(height: 8),
+        OutlinedButton.icon(
+          onPressed: _mounted[_selected]
+              ? () => setState(() => _mounted[_selected] = false)
+              : null,
+          icon: const Icon(Icons.delete_outline),
+          label: Text('仅销毁“${_labels[_selected]}”缓存'),
+        ),
+      ],
+    );
+  }
+}
+
+class _HomeNativeScene extends StatefulWidget {
+  const _HomeNativeScene({super.key, required this.cacheId});
+
+  final String cacheId;
+
+  @override
+  State<_HomeNativeScene> createState() => _HomeNativeSceneState();
+}
+
+class _HomeNativeSceneState extends State<_HomeNativeScene> {
+  Object? _ad;
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  @override
+  void dispose() {
+    adPlugin.disposeNativeAd(homePlacement, cacheId: widget.cacheId);
+    super.dispose();
+  }
+
+  Future<void> _load() async {
+    setState(() => _loading = true);
+    await adPlugin.loadNative(
+      homePlacement,
+      eventName: '${widget.cacheId}_load',
+      cacheId: widget.cacheId,
+    );
+    if (!mounted) return;
+    setState(() {
+      _ad = adPlugin.getNativeAd(
+        homePlacement,
+        eventName: '${widget.cacheId}_show',
+        cacheId: widget.cacheId,
+      );
+      _loading = false;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                'cacheId: ${widget.cacheId}',
+                style: Theme.of(context).textTheme.labelMedium,
+              ),
+            ),
+            IconButton(
+              tooltip: '重新加载',
+              onPressed: _loading ? null : _load,
+              icon: const Icon(Icons.refresh),
+            ),
+          ],
+        ),
+        if (_loading)
+          const SizedBox(
+            height: 96,
+            child: Center(child: CircularProgressIndicator()),
+          )
+        else if (_ad == null)
+          const SizedBox(height: 96, child: Center(child: Text('当前场景加载失败')))
+        else
+          adPlugin.widgetFactory.nativeWidget(_ad!, height: 280),
+      ],
+    );
+  }
+}
+
+class _DestroyedHomeScene extends StatelessWidget {
+  const _DestroyedHomeScene({required this.cacheId, required this.onRestore});
+
+  final String cacheId;
+  final VoidCallback onRestore;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 120,
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Text('$cacheId 已销毁'),
+          const SizedBox(height: 8),
+          FilledButton.icon(
+            onPressed: onRestore,
+            icon: const Icon(Icons.restore),
+            label: const Text('重新创建场景'),
           ),
         ],
-      ],
+      ),
     );
   }
 }
@@ -632,7 +787,9 @@ class _InlineBannerDemoPageState extends State<InlineBannerDemoPage> {
 
   @override
   void dispose() {
-    adPlugin.disposeBannerAd(inlineBannerPlacement);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      adPlugin.disposeBannerAd(inlineBannerPlacement);
+    });
     super.dispose();
   }
 

@@ -16,7 +16,7 @@ class FullscreenNativeAdDialog extends StatefulWidget {
   const FullscreenNativeAdDialog({
     super.key,
     required this.placement,
-    required this.placementLabel,
+    required this.eventName,
     required this.ad,
     required this.clickTracker,
     required this.closePassThroughPercent,
@@ -35,7 +35,7 @@ class FullscreenNativeAdDialog extends StatefulWidget {
   static Future<bool> show({
     required BuildContext context,
     required PlacementType placement,
-    required String placementLabel,
+    required String eventName,
     required Object ad,
     required NativeAdClickTracker? clickTracker,
     required VoidCallback onClosed,
@@ -56,7 +56,7 @@ class FullscreenNativeAdDialog extends StatefulWidget {
         pageBuilder: (context, animation, secondaryAnimation) {
           return FullscreenNativeAdDialog(
             placement: placement,
-            placementLabel: placementLabel,
+            eventName: eventName,
             ad: ad,
             clickTracker: clickTracker,
             closePassThroughPercent: closePassThroughPercent,
@@ -74,7 +74,7 @@ class FullscreenNativeAdDialog extends StatefulWidget {
   }
 
   final PlacementType placement;
-  final String placementLabel;
+  final String eventName;
   final Object ad;
   final NativeAdClickTracker? clickTracker;
   final int closePassThroughPercent;

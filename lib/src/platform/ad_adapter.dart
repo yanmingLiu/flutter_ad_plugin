@@ -57,7 +57,6 @@ abstract class AdTypeAdapter {
   Future<AdShowResult> show({
     required PlacementType placement,
     BuildContext? context,
-    String? placementLabel,
     required String eventName,
     required Object ad,
     VoidCallback? onAdShowed,

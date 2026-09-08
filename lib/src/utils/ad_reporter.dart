@@ -22,8 +22,12 @@ enum AdEventType {
 /// 插件不做任何处理，原样透传。
 class AdEvent {
   final AdEventType? eventType;
+
+  /// 发起展示调用的业务广告位；加载事件和无替换展示时可为空。
+  final PlacementType? requestedPlacement;
+
+  /// 实际加载或展示的缓存广告位。
   final PlacementType? placement;
-  final String? placementLabel;
   final AdType? adType;
   final AdSource? source;
   final String? adUnitId;
@@ -40,8 +44,8 @@ class AdEvent {
 
   AdEvent({
     this.eventType,
+    this.requestedPlacement,
     this.placement,
-    this.placementLabel,
     this.adType,
     this.source,
     this.adUnitId,
@@ -57,8 +61,8 @@ class AdEvent {
   Map<String, Object?> toJson() {
     return {
       'event_type': eventType?.name,
+      'requested_placement': requestedPlacement?.name,
       'placement': placement?.name,
-      'placement_label': placementLabel,
       'ad_type': adType?.name,
       'ad_source': source?.name,
       'ad_unit_id': adUnitId,
@@ -92,14 +96,12 @@ class AdNotReadyEvent {
   const AdNotReadyEvent({
     required this.requestedPlacement,
     required this.showPlacement,
-    this.placementLabel,
     required this.eventName,
     required this.message,
   });
 
   final PlacementType requestedPlacement;
   final PlacementType showPlacement;
-  final String? placementLabel;
   final String eventName;
   final String message;
 }

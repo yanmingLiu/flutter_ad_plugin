@@ -154,5 +154,16 @@ void main() {
       final slots = cache.getSlots(PlacementType('home'));
       expect(slots, isNotEmpty);
     });
+
+    test('cacheId isolates slots for the same placement', () {
+      const placement = PlacementType('home');
+      cache.addSlot(placement, _makeSlot('home', 'tab-1'), cacheId: 'tab-1');
+      cache.addSlot(placement, _makeSlot('home', 'tab-2'), cacheId: 'tab-2');
+
+      cache.clear(placement, cacheId: 'tab-1');
+
+      expect(cache.hasSlot(placement, cacheId: 'tab-1'), isFalse);
+      expect(cache.firstSlot(placement, cacheId: 'tab-2')?.ad, 'tab-2');
+    });
   });
 }

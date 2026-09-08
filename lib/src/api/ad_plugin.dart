@@ -2,11 +2,11 @@ import 'package:flutter/widgets.dart';
 
 import '../core/ad_config.dart';
 import '../core/ad_enums.dart';
+import '../core/ad_models.dart';
 import '../core/ad_policy.dart';
 import '../engine/ad_cache_service.dart';
 import '../engine/ad_event_mapper.dart';
 import '../engine/ad_guard.dart';
-import '../engine/ad_lifecycle_manager.dart';
 import '../engine/ad_loader_service.dart';
 import '../engine/ad_presenter.dart';
 import '../platform/ad_adapter.dart';
@@ -73,7 +73,6 @@ class AdPlugin {
   late final AdAdapterRegistry _adapterRegistry;
   late final AdCacheService _cache;
   late final AdDisplayGuard _guard;
-  late final AdLifecycleManager _lifecycle;
   late final AdEventMapper _eventMapper;
   late final AdLoaderService _loader;
   late final AdPresenter _presenter;
@@ -116,13 +115,13 @@ class AdPlugin {
             AdmobOpenAdapter(),
             AdmobInterstitialAdapter(),
             AdmobRewardedAdapter(),
+            AdmobRewardedInterstitialAdapter(),
             AdmobNativeAdapter(),
             AdmobBannerAdapter(),
           ],
     );
     _cache = AdCacheService();
     _guard = AdDisplayGuard();
-    _lifecycle = AdLifecycleManager();
     _eventMapper = AdEventMapper();
 
     if (_config.enableHealthMetrics) {
@@ -143,7 +142,6 @@ class AdPlugin {
       configRepository: effectiveConfigRepo,
       adapterRegistry: _adapterRegistry,
       cache: _cache,
-      lifecycle: _lifecycle,
       eventMapper: _eventMapper,
       reporter: _config.eventReporter,
     );
@@ -157,7 +155,6 @@ class AdPlugin {
       reporter: _config.eventReporter,
       loader: _loader,
     );
-    _presenter.setLifecycleManager(_lifecycle);
 
     await _sdkInitializer.initAll();
 
@@ -175,7 +172,6 @@ class AdPlugin {
     if (_disposed) return;
     _disposed = true;
     _loader.dispose();
-    _lifecycle.dispose();
     _cache.disposeAll();
     _guard.resetForTesting();
     _initialized = false;
@@ -196,10 +192,9 @@ class AdPlugin {
     return _loader.preloadPlacements(placements, eventName: eventName);
   }
 
-  Future<bool> show(
+  Future<AdShowResult> show(
     PlacementType placement, {
     BuildContext? context,
-    String? placementLabel,
     required String eventName,
     int? closePassThroughPercent,
   }) {
@@ -207,10 +202,9 @@ class AdPlugin {
     return _presenter.show(
       placement,
       context: context,
-      placementLabel: placementLabel,
       eventName: eventName,
-      closePassThroughPercent: closePassThroughPercent ??
-          _config.nativeAdCloseClickPercent,
+      closePassThroughPercent:
+          closePassThroughPercent ?? _config.nativeAdCloseClickPercent,
       onAdNotReady: _config.onAdNotReady,
     );
   }
@@ -218,7 +212,6 @@ class AdPlugin {
   Future<bool> showSequence(
     PlacementType placement, {
     BuildContext? context,
-    String? placementLabel,
     required String eventName,
     int? closePassThroughPercent,
   }) {
@@ -226,30 +219,37 @@ class AdPlugin {
     return _presenter.showSequence(
       placement,
       context: context,
-      placementLabel: placementLabel,
       eventName: eventName,
-      closePassThroughPercent: closePassThroughPercent ??
-          _config.nativeAdCloseClickPercent,
+      closePassThroughPercent:
+          closePassThroughPercent ?? _config.nativeAdCloseClickPercent,
       onAdNotReady: _config.onAdNotReady,
     );
   }
 
   // --- Native ---
 
-  Future<bool> loadNative(PlacementType placement, {required String eventName}) {
+  Future<bool> loadNative(
+    PlacementType placement, {
+    required String eventName,
+    String? cacheId,
+  }) {
     _assertInitialized();
-    return _loader.preloadNative(placement, eventName: eventName);
+    return _loader.preloadNative(
+      placement,
+      eventName: eventName,
+      cacheId: cacheId,
+    );
   }
 
   Object? getNativeAd(
     PlacementType placement, {
-    String? placementLabel,
+    String? cacheId,
     required String eventName,
   }) {
     _assertInitialized();
     return _presenter.getNativeAd(
       placement,
-      placementLabel: placementLabel,
+      cacheId: cacheId,
       eventName: eventName,
     );
   }
@@ -257,21 +257,24 @@ class AdPlugin {
   List<Object> getNativeAds(
     PlacementType placement, {
     int count = 2,
-    String? placementLabel,
+    String? cacheId,
     required String eventName,
   }) {
     _assertInitialized();
     return _presenter.getNativeAds(
       placement,
       count: count,
-      placementLabel: placementLabel,
+      cacheId: cacheId,
       eventName: eventName,
     );
   }
 
   // --- Banner ---
 
-  Future<bool> loadBanner(PlacementType placement, {required String eventName}) {
+  Future<bool> loadBanner(
+    PlacementType placement, {
+    required String eventName,
+  }) {
     _assertInitialized();
     return _loader.preloadBanner(placement, eventName: eventName);
   }
@@ -284,14 +287,12 @@ class AdPlugin {
   List<Object> getBannerAds(
     PlacementType placement, {
     int count = 2,
-    String? placementLabel,
     required String eventName,
   }) {
     _assertInitialized();
     return _presenter.getBannerAds(
       placement,
       count: count,
-      placementLabel: placementLabel,
       eventName: eventName,
     );
   }
@@ -301,9 +302,9 @@ class AdPlugin {
     _presenter.disposeBannerAd(placement);
   }
 
-  void disposeNativeAd(PlacementType placement) {
+  void disposeNativeAd(PlacementType placement, {String? cacheId}) {
     _assertInitialized();
-    _presenter.disposeNativeAd(placement);
+    _presenter.disposeNativeAd(placement, cacheId: cacheId);
   }
 
   void _assertInitialized() {
@@ -330,8 +331,8 @@ class _PolicyOverrideRepo implements AdConfigRepository {
   AdConfig _withPolicies(AdConfig config) {
     return AdConfig(
       loadTimeoutSeconds: config.loadTimeoutSeconds,
-      samePlacementCdSeconds: config.samePlacementCdSeconds,
-      differentPlacementCdSeconds: config.differentPlacementCdSeconds,
+      rewardedLoadTimeoutSeconds: config.rewardedLoadTimeoutSeconds,
+      adCdSeconds: config.adCdSeconds,
       commonPlacements: config.commonPlacements,
       highValuePlacement: config.highValuePlacement,
       placements: config.placements,

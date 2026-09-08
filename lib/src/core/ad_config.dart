@@ -8,8 +8,8 @@ import 'ad_policy.dart';
 /// 所有广告行为（超时、CD、缓存数量、策略）均由本配置驱动。
 class AdConfig {
   final int loadTimeoutSeconds;
-  final int samePlacementCdSeconds;
-  final int differentPlacementCdSeconds;
+  final int rewardedLoadTimeoutSeconds;
+  final int adCdSeconds;
   final List<PlacementType> commonPlacements;
   final PlacementType? highValuePlacement;
   final Map<PlacementType, List<AdUnitConfig>> placements;
@@ -17,8 +17,8 @@ class AdConfig {
 
   const AdConfig({
     required this.loadTimeoutSeconds,
-    required this.samePlacementCdSeconds,
-    required this.differentPlacementCdSeconds,
+    this.rewardedLoadTimeoutSeconds = 7,
+    required this.adCdSeconds,
     this.commonPlacements = const [],
     this.highValuePlacement,
     required this.placements,
@@ -41,18 +41,12 @@ class AdConfig {
 
   int fullscreenCacheSizeFor(PlacementType placement, {int minimum = 1}) {
     final policy = getPolicy(placement);
-    final hasTraditionalFullscreen = getUnits(
-      placement,
-    ).any((unit) => unit.type.isFullscreen);
     return _cacheSizeFor(
       placement,
       minimum: minimum,
       include: (unit) =>
           unit.type.isFullscreen ||
-          (policy.isFullscreen &&
-              unit.type == AdType.native &&
-              (!hasTraditionalFullscreen ||
-                  (policy.allowedTypes?.contains(AdType.native) ?? false))),
+          (policy.isFullscreen && unit.type == AdType.native),
     );
   }
 
@@ -79,7 +73,14 @@ class AdConfig {
   }
 
   Duration loadTimeoutFor(AdUnitConfig unit) {
-    return Duration(seconds: unit.loadTimeoutSeconds ?? loadTimeoutSeconds);
+    return Duration(
+      seconds:
+          unit.loadTimeoutSeconds ??
+          (unit.type == AdType.rewarded ||
+                  unit.type == AdType.rewardedInterstitial
+              ? rewardedLoadTimeoutSeconds
+              : loadTimeoutSeconds),
+    );
   }
 
   PlacementPolicy getPolicy(PlacementType placement) {
@@ -101,7 +102,8 @@ class AdUnitConfig {
   final String id;
   final String cacheKey;
   final String? templateType;
-  final int? refreshMinutes;
+  final String? factoryId;
+  final String? bannerMode;
   final int? loadTimeoutSeconds;
   final int poolSize;
 
@@ -112,7 +114,8 @@ class AdUnitConfig {
     required this.id,
     String? cacheKey,
     this.templateType,
-    this.refreshMinutes,
+    this.factoryId,
+    this.bannerMode,
     this.loadTimeoutSeconds,
     this.poolSize = 1,
   }) : cacheKey = cacheKey ?? id;
@@ -158,10 +161,11 @@ class AdConfigParser {
 
     return AdConfig(
       loadTimeoutSeconds: (json['load_timeout'] as num?)?.toInt() ?? 7,
-      samePlacementCdSeconds:
-          (json['same_placement_cd'] as num?)?.toInt() ?? 30,
-      differentPlacementCdSeconds:
-          (json['different_placement_cd'] as num?)?.toInt() ?? 30,
+      rewardedLoadTimeoutSeconds:
+          (json['rewarded_load_timeout'] as num?)?.toInt() ??
+          (json['load_timeout'] as num?)?.toInt() ??
+          7,
+      adCdSeconds: (json['ad_cd'] as num?)?.toInt() ?? 30,
       commonPlacements: commonList.isEmpty
           ? const [PlacementType('behavior'), PlacementType('behavior2')]
           : commonList,
@@ -212,7 +216,8 @@ class AdConfigParser {
         id: id,
         cacheKey: '${sourceRaw}_${typeRaw}_${index}_$id',
         templateType: json['template_type'] as String?,
-        refreshMinutes: (json['refresh_minutes'] as num?)?.toInt(),
+        factoryId: _stringValue(json['factory_id']),
+        bannerMode: _stringValue(json['banner_mode']),
         loadTimeoutSeconds: (json['load_timeout'] as num?)?.toInt(),
         poolSize: ids.length,
       );
@@ -303,8 +308,8 @@ class DefaultAdConfigRepository implements AdConfigRepository {
     }
     return AdConfig(
       loadTimeoutSeconds: config.loadTimeoutSeconds,
-      samePlacementCdSeconds: config.samePlacementCdSeconds,
-      differentPlacementCdSeconds: config.differentPlacementCdSeconds,
+      rewardedLoadTimeoutSeconds: config.rewardedLoadTimeoutSeconds,
+      adCdSeconds: config.adCdSeconds,
       commonPlacements: config.commonPlacements,
       highValuePlacement: config.highValuePlacement,
       placements: config.placements,

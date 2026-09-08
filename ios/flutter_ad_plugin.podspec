@@ -7,9 +7,8 @@ Pod::Spec.new do |s|
   s.license          = { :type => 'MIT' }
   s.author           = { 'flutter_ad_plugin' => 'example@example.com' }
   s.source           = { :path => '.' }
-  s.source_files     = 'Classes/**/*'
+  s.source_files     = 'flutter_ad_plugin/Sources/flutter_ad_plugin/**/*'
   s.dependency 'Flutter'
-  s.dependency 'google_mobile_ads'
   s.platform = :ios, '13.0'
   s.swift_version = '5.0'
   s.static_framework = true

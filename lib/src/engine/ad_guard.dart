@@ -36,11 +36,11 @@ class AdGuardResult {
 /// 广告展示策略守卫。
 ///
 /// 负责 CD 冷却（Same CD / Global CD）和全屏互斥检查。
-/// 所有检查由 JSON 配置中的 [PlacementPolicy] 驱动，不经代码硬编码。
+/// 全屏判断由 [PlacementPolicy] 驱动，所有全屏广告统一执行 CD。
 ///
 /// ## 冷却逻辑
-/// - 同广告位冷却：同一个 placement 在 `same_placement_cd` 秒内重复触发会被拦截
-/// - 跨广告位冷却：刚展示过其他全屏 placement 后，`different_placement_cd` 秒内展示当前 placement 会被拦截
+/// - 同广告位冷却：同一个 placement 在 `ad_cd` 秒内重复触发会被拦截
+/// - 跨广告位冷却：刚展示过其他全屏 placement 后，`ad_cd` 秒内展示当前 placement 会被拦截
 /// - 全屏互斥：同一时间只允许一个全屏广告展示
 class AdDisplayGuard {
   final Map<PlacementType, DateTime> _lastShownByPlacement = {};
@@ -73,35 +73,30 @@ class AdDisplayGuard {
     }
 
     final now = DateTime.now();
-    if (policy.applySamePlacementCd) {
-      final last = _lastShownByPlacement[placement];
-      if (last != null) {
-        final elapsed = now.difference(last).inSeconds;
-        if (elapsed < config.samePlacementCdSeconds) {
-          return AdGuardResult.blocked(
-            reason: AdGuardBlockReason.samePlacementCooldown,
-            retryAfterSeconds: config.samePlacementCdSeconds - elapsed,
-            relatedPlacement: placement,
-          );
-        }
+    final last = _lastShownByPlacement[placement];
+    if (last != null) {
+      final elapsed = now.difference(last).inSeconds;
+      if (elapsed < config.adCdSeconds) {
+        return AdGuardResult.blocked(
+          reason: AdGuardBlockReason.samePlacementCooldown,
+          retryAfterSeconds: config.adCdSeconds - elapsed,
+          relatedPlacement: placement,
+        );
       }
     }
 
-    if (policy.applyDifferentPlacementCd) {
-      final lastGlobalShownAt = _lastGlobalShownAt;
-      final lastGlobalPlacement = _lastGlobalPlacement;
-      if (lastGlobalShownAt != null &&
-          lastGlobalPlacement != null &&
-          lastGlobalPlacement != placement &&
-          now.difference(lastGlobalShownAt).inSeconds <
-              config.differentPlacementCdSeconds) {
-        final elapsed = now.difference(lastGlobalShownAt).inSeconds;
-        return AdGuardResult.blocked(
-          reason: AdGuardBlockReason.differentPlacementCooldown,
-          retryAfterSeconds: config.differentPlacementCdSeconds - elapsed,
-          relatedPlacement: lastGlobalPlacement,
-        );
-      }
+    final lastGlobalShownAt = _lastGlobalShownAt;
+    final lastGlobalPlacement = _lastGlobalPlacement;
+    if (lastGlobalShownAt != null &&
+        lastGlobalPlacement != null &&
+        lastGlobalPlacement != placement &&
+        now.difference(lastGlobalShownAt).inSeconds < config.adCdSeconds) {
+      final elapsed = now.difference(lastGlobalShownAt).inSeconds;
+      return AdGuardResult.blocked(
+        reason: AdGuardBlockReason.differentPlacementCooldown,
+        retryAfterSeconds: config.adCdSeconds - elapsed,
+        relatedPlacement: lastGlobalPlacement,
+      );
     }
 
     return const AdGuardResult.allowed();
@@ -115,14 +110,12 @@ class AdDisplayGuard {
   }
 
   /// 广告正常关闭时调用，记录 CD 时间并清除互斥标记。
-  void markShowCompleted(PlacementType placement, PlacementPolicy policy) {
+  void markShowCompleted(PlacementType placement) {
     final now = DateTime.now();
     _lastShownByPlacement[placement] = now;
 
-    if (policy.contributesToGlobalCooldown) {
-      _lastGlobalShownAt = now;
-      _lastGlobalPlacement = placement;
-    }
+    _lastGlobalShownAt = now;
+    _lastGlobalPlacement = placement;
     _isFullscreenShowing = false;
   }
 

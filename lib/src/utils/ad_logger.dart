@@ -5,7 +5,7 @@ import 'ad_reporter.dart';
 final log = AppLogger();
 
 class AppLogger {
-  bool verboseEnabled = false;
+  bool verboseEnabled = true;
 
   void d(Object message) {
     debugPrint('[ad] $message');
@@ -82,6 +82,10 @@ String _extraFields(AdEvent event) {
   final net = event.network;
   if (net != null && net.isNotEmpty) {
     buf.write(' network=$net');
+  }
+  final requested = event.requestedPlacement;
+  if (requested != null && requested != event.placement) {
+    buf.write(' request=${requested.name}');
   }
   return buf.toString();
 }

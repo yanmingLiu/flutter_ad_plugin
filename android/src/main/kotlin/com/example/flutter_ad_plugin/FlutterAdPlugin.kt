@@ -9,51 +9,59 @@ import io.flutter.plugins.googlemobileads.GoogleMobileAdsPlugin
 class FlutterAdPlugin : FlutterPlugin {
     private companion object {
         const val TAG = "FlutterAdPlugin"
-        const val FACTORY_ID = "fullScreenNative"
+        const val FULLSCREEN_FACTORY_ID = "fullScreenNative"
+        const val HOME_FACTORY_ID = "homeListTile"
         const val MAX_REGISTER_ATTEMPTS = 5
     }
 
-    private var factory: FullScreenNativeAdFactory? = null
-    private var isRegistered = false
+    private var fullScreenFactory: FullScreenNativeAdFactory? = null
+    private var homeFactory: HomeNativeAdFactory? = null
+    private val registeredFactoryIds = mutableSetOf<String>()
     private val mainHandler = Handler(Looper.getMainLooper())
 
     override fun onAttachedToEngine(binding: FlutterPlugin.FlutterPluginBinding) {
-        factory = FullScreenNativeAdFactory(binding.applicationContext)
+        fullScreenFactory = FullScreenNativeAdFactory(binding.applicationContext)
+        homeFactory = HomeNativeAdFactory(binding.applicationContext)
         mainHandler.post {
-            registerFactory(binding)
+            registerFactory(binding, FULLSCREEN_FACTORY_ID, fullScreenFactory)
+            registerFactory(binding, HOME_FACTORY_ID, homeFactory)
         }
     }
 
     override fun onDetachedFromEngine(binding: FlutterPlugin.FlutterPluginBinding) {
         mainHandler.removeCallbacksAndMessages(null)
-        if (isRegistered) {
+        for (factoryId in registeredFactoryIds) {
             GoogleMobileAdsPlugin.unregisterNativeAdFactory(
                 binding.flutterEngine,
-                FACTORY_ID
+                factoryId
             )
         }
-        isRegistered = false
-        factory = null
+        registeredFactoryIds.clear()
+        fullScreenFactory = null
+        homeFactory = null
     }
 
     private fun registerFactory(
         binding: FlutterPlugin.FlutterPluginBinding,
+        factoryId: String,
+        factory: GoogleMobileAdsPlugin.NativeAdFactory?,
         attempt: Int = 1
     ) {
         val nativeFactory = factory ?: return
         try {
-            isRegistered = GoogleMobileAdsPlugin.registerNativeAdFactory(
+            val registered = GoogleMobileAdsPlugin.registerNativeAdFactory(
                 binding.flutterEngine,
-                FACTORY_ID,
+                factoryId,
                 nativeFactory
             )
+            if (registered) registeredFactoryIds.add(factoryId)
         } catch (error: IllegalStateException) {
             if (attempt >= MAX_REGISTER_ATTEMPTS) {
-                Log.w(TAG, "Unable to register $FACTORY_ID NativeAdFactory", error)
+                Log.w(TAG, "Unable to register $factoryId NativeAdFactory", error)
                 return
             }
             mainHandler.postDelayed({
-                registerFactory(binding, attempt + 1)
+                registerFactory(binding, factoryId, factory, attempt + 1)
             }, 100L)
         }
     }

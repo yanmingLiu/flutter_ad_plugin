@@ -23,7 +23,6 @@ void main() {
 
       expect(event.eventType, isNull);
       expect(event.placement, isNull);
-      expect(event.placementLabel, isNull);
       expect(event.adType, isNull);
       expect(event.source, isNull);
       expect(event.adUnitId, isNull);
@@ -52,7 +51,6 @@ void main() {
       expect(event.adUnitId, isNull);
       expect(event.timestamp, now);
       expect(event.eventName, 'cold_start');
-      expect(event.placementLabel, isNull);
       expect(event.revenue, isNull);
       expect(event.currency, isNull);
       expect(event.errorCode, isNull);
@@ -65,7 +63,6 @@ void main() {
       final event = AdEvent(
         eventType: AdEventType.showSuccess,
         placement: const PlacementType('home'),
-        placementLabel: 'tab_home',
         adType: AdType.interstitial,
         source: AdSource.admob,
         adUnitId: 'unit-2',
@@ -78,7 +75,6 @@ void main() {
         network: 'AdMob',
       );
 
-      expect(event.placementLabel, 'tab_home');
       expect(event.revenue, 1500.0);
       expect(event.currency, 'USD');
       expect(event.network, 'AdMob');
@@ -127,6 +123,7 @@ void main() {
       final json = AdEvent().toJson();
 
       expect(json['event_type'], isNull);
+      expect(json['requested_placement'], isNull);
       expect(json['placement'], isNull);
       expect(json['ad_type'], isNull);
       expect(json['ad_source'], isNull);
@@ -167,7 +164,6 @@ void main() {
       final event = AdEvent(
         eventType: AdEventType.income,
         placement: const PlacementType('home'),
-        placementLabel: 'inbox_top',
         adType: AdType.interstitial,
         source: AdSource.admob,
         adUnitId: 'unit-income',
@@ -183,7 +179,7 @@ void main() {
       final json = event.toJson();
       expect(json['event_type'], 'income');
       expect(json['placement'], 'home');
-      expect(json['placement_label'], 'inbox_top');
+      expect(json.containsKey('placement_label'), isFalse);
       expect(json['ad_type'], 'interstitial');
       expect(json['ad_source'], 'admob');
       expect(json['ad_unit_id'], 'unit-income');
@@ -216,8 +212,8 @@ void main() {
       final now = DateTime.utc(2026, 5, 1, 8, 0, 0);
       final event = AdEvent(
         eventType: AdEventType.show,
+        requestedPlacement: const PlacementType('behavior'),
         placement: const PlacementType('interstitial'),
-        placementLabel: 'inbox',
         adType: AdType.interstitial,
         source: AdSource.admob,
         adUnitId: 'unit-show',
@@ -227,8 +223,9 @@ void main() {
 
       final json = event.toJson();
       expect(json['event_type'], 'show');
+      expect(json['requested_placement'], 'behavior');
       expect(json['placement'], 'interstitial');
-      expect(json['placement_label'], 'inbox');
+      expect(json.containsKey('placement_label'), isFalse);
       expect(json['ad_type'], 'interstitial');
       expect(json['ad_unit_id'], 'unit-show');
       expect(json['timestamp'], '2026-05-01T08:00:00.000Z');
@@ -278,13 +275,11 @@ void main() {
       const event = AdNotReadyEvent(
         requestedPlacement: PlacementType('interstitial'),
         showPlacement: PlacementType('open'),
-        placementLabel: 'start_screen',
         eventName: 'cold_start',
         message: 'Ad not ready yet, please try again',
       );
       expect(event.requestedPlacement, const PlacementType('interstitial'));
       expect(event.showPlacement, const PlacementType('open'));
-      expect(event.placementLabel, 'start_screen');
       expect(event.eventName, 'cold_start');
       expect(event.message, 'Ad not ready yet, please try again');
     });

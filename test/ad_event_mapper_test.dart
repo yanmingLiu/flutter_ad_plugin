@@ -103,18 +103,16 @@ void main() {
       expect(event.network, 'network1');
     });
 
-    test('maps all placementLabel and eventName fields', () {
+    test('preserves eventName', () {
       final cb = AdShowedCallback('ad_obj', null);
       final event = mapper.map(
         cb,
         placement: placement,
-        placementLabel: 'inbox_top',
         eventName: 'custom_event',
         adType: adType,
         source: source,
         adUnitId: adUnitId,
       );
-      expect(event.placementLabel, 'inbox_top');
       expect(event.eventName, 'custom_event');
     });
 

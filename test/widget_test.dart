@@ -123,12 +123,7 @@ void main() {
         },
       ],
       'common_placements': ['behavior', 'behavior2'],
-      'placement_policy': {
-        'open': {
-          'wait_for_load_on_show': true,
-          'prefer_high_value_on_show': true,
-        },
-      },
+      'placement_policy': {'open': {}},
     });
 
     const openPlacement = PlacementType('open');
@@ -147,8 +142,6 @@ void main() {
       playMiddlePlacement,
     });
     expect(config.highValuePlacement, levelHPlacement);
-    expect(config.getPolicy(openPlacement).waitForLoadOnShow, isFalse);
-    expect(config.getPolicy(openPlacement).preferHighValueOnShow, isFalse);
     expect(config.getUnits(behaviorPlacement).single.id, 'common-fullscreen');
     expect(config.getUnits(levelHPlacement).single.id, 'high-value');
 

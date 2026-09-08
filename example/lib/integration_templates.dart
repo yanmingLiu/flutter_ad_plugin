@@ -8,9 +8,9 @@ class MyConfigRepository extends DefaultAdConfigRepository {
   static Map<String, dynamic> get localConfig {
     final ids = _AdMobTestIds.current;
     return {
+      'ad_cd': 0,
       'load_timeout': 7,
-      'same_placement_cd': 30,
-      'different_placement_cd': 30,
+      'rewarded_load_timeout': 20,
       'common_placements': ['behavior', 'behavior2'],
       'high_value_placement': 'level_h',
       'open': [
@@ -19,8 +19,15 @@ class MyConfigRepository extends DefaultAdConfigRepository {
           'source': 'admob',
           'weight': 2,
           'type': 'interstitial',
-          'id': ids.interstitial,
+          'ad_id': ids.interstitial,
         },
+        {
+          'source': 'admob',
+          'weight': 1,
+          'type': 'rewarded',
+          'ad_id': ids.rewarded,
+        },
+        {'source': 'admob', 'weight': 4, 'type': 'native', 'ad_id': ids.native},
       ],
       'home': [
         {
@@ -28,28 +35,7 @@ class MyConfigRepository extends DefaultAdConfigRepository {
           'weight': 1,
           'type': 'native',
           'id': ids.native,
-          'id2': ids.nativeVideo,
           'template_type': 'medium',
-          'refresh_minutes': 20,
-        },
-      ],
-      'message': [
-        {
-          'source': 'admob',
-          'weight': 2,
-          'type': 'interstitial',
-          'id': ids.interstitial,
-          'load_timeout': 15,
-        },
-      ],
-      'fullscreen_native': [
-        {
-          'source': 'admob',
-          'weight': 1,
-          'type': 'native',
-          'id': ids.native,
-          'id2': ids.nativeVideo,
-          'load_timeout': 15,
         },
       ],
       'behavior': [
@@ -64,16 +50,16 @@ class MyConfigRepository extends DefaultAdConfigRepository {
         {
           'ad_source': 'admob',
           'ad_weight': 1,
-          'ad_type': 'rewarded',
-          'ad_id': ids.rewarded,
+          'ad_type': 'native',
+          'ad_id': ids.native,
         },
       ],
       'level_h': [
         {
           'ad_source': 'admob',
           'ad_weight': 1,
-          'ad_type': 'interstitial',
-          'ad_id': ids.interstitial,
+          'ad_type': 'rewarded_interstitial',
+          'ad_id': ids.rewardedInterstitial,
         },
       ],
       'play_middle': [
@@ -98,7 +84,6 @@ class MyConfigRepository extends DefaultAdConfigRepository {
           'ad_type': 'banner',
           'ad_id': ids.banner,
           'banner_mode': 'global',
-          'refresh_minutes': 30,
         },
       ],
       'article_inline_banner': [
@@ -117,38 +102,7 @@ class MyConfigRepository extends DefaultAdConfigRepository {
 }
 
 Map<PlacementType, PlacementPolicy> buildPlacementPolicies() {
-  return {
-    const PlacementType('open'): const PlacementPolicy(
-      isFullscreen: true,
-      applySamePlacementCd: true,
-      applyDifferentPlacementCd: true,
-      contributesToGlobalCooldown: true,
-      showNotReadyToast: false,
-      waitForLoadOnShow: true,
-      preferHighValueOnShow: false,
-    ),
-    const PlacementType('message'): const PlacementPolicy(
-      isFullscreen: true,
-      applySamePlacementCd: false,
-      applyDifferentPlacementCd: false,
-      contributesToGlobalCooldown: false,
-      showNotReadyToast: true,
-      waitForLoadOnShow: true,
-      preferHighValueOnShow: true,
-      notReadyMsg: 'Ad is still loading, please wait a moment.',
-    ),
-    const PlacementType('fullscreen_native'): PlacementPolicy(
-      isFullscreen: true,
-      applySamePlacementCd: false,
-      applyDifferentPlacementCd: false,
-      contributesToGlobalCooldown: false,
-      showNotReadyToast: true,
-      waitForLoadOnShow: true,
-      preferHighValueOnShow: false,
-      allowedTypes: {AdType.native},
-      notReadyMsg: 'Fullscreen native ad is still loading.',
-    ),
-  };
+  return const {};
 }
 
 class _AdMobTestIds {
@@ -156,6 +110,7 @@ class _AdMobTestIds {
     required this.open,
     required this.interstitial,
     required this.rewarded,
+    required this.rewardedInterstitial,
     required this.native,
     required this.nativeVideo,
     required this.banner,
@@ -164,6 +119,7 @@ class _AdMobTestIds {
   final String open;
   final String interstitial;
   final String rewarded;
+  final String rewardedInterstitial;
   final String native;
   final String nativeVideo;
   final String banner;
@@ -176,6 +132,7 @@ class _AdMobTestIds {
     open: 'ca-app-pub-3940256099942544/9257395921',
     interstitial: 'ca-app-pub-3940256099942544/1033173712',
     rewarded: 'ca-app-pub-3940256099942544/5224354917',
+    rewardedInterstitial: 'ca-app-pub-3940256099942544/5354046379',
     native: 'ca-app-pub-3940256099942544/2247696110',
     nativeVideo: 'ca-app-pub-3940256099942544/1044960115',
     banner: 'ca-app-pub-3940256099942544/6300978111',
@@ -185,6 +142,7 @@ class _AdMobTestIds {
     open: 'ca-app-pub-3940256099942544/5575463023',
     interstitial: 'ca-app-pub-3940256099942544/4411468910',
     rewarded: 'ca-app-pub-3940256099942544/1712485313',
+    rewardedInterstitial: 'ca-app-pub-3940256099942544/6978759866',
     native: 'ca-app-pub-3940256099942544/3986624511',
     nativeVideo: 'ca-app-pub-3940256099942544/2521693316',
     banner: 'ca-app-pub-3940256099942544/2934735716',
@@ -192,8 +150,13 @@ class _AdMobTestIds {
 }
 
 class MyAdEventReporter implements AdEventReporter {
+  MyAdEventReporter({this.onEvent});
+
+  final void Function(AdEvent event)? onEvent;
+
   @override
   Future<void> report(AdEvent event) async {
+    onEvent?.call(event);
     // 示例：将广告收入上报至 Facebook
     // if (event.eventType == AdEventType.income && event.revenue != null) {
     //   FacebookSDKUtil.logAdImpression(
