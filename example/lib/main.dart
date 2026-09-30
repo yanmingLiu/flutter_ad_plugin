@@ -4,18 +4,18 @@ import 'package:flutter/material.dart';
 import 'package:flutter_ad_plugin/flutter_ad_plugin.dart';
 
 import 'demo_components.dart';
-import 'fullscreen_native_ad_dialog.dart';
 import 'integration_templates.dart';
+import 'platform_test_config.dart';
 import 'utils/ad_lifecycle.dart';
 
 // ─── 广告位 ─────────────────────────────────────────────────────
-const openPlacement = PlacementType('open');
-const homePlacement = PlacementType('home');
-const behaviorPlacement = PlacementType('behavior');
-const behavior2Placement = PlacementType('behavior2');
-const playMiddlePlacement = PlacementType('play_middle');
-const bottomBannerPlacement = PlacementType('bottom_banner');
-const inlineBannerPlacement = PlacementType('article_inline_banner');
+const openPlacement = 'open';
+const homePlacement = 'home';
+const behaviorPlacement = 'behavior';
+const behavior2Placement = 'behavior2';
+const playMiddlePlacement = 'play_middle';
+const bottomBannerPlacement = 'bottom_banner';
+const inlineBannerPlacement = 'article_inline_banner';
 
 const coldStartPlacements = [
   behaviorPlacement,
@@ -28,24 +28,53 @@ const homeCacheIds = ['home_feed', 'home_following', 'home_profile'];
 // ─── 全局插件实例 ──────────────────────────────────────────────
 late final AdPlugin adPlugin;
 late final Future<bool> coldStartOpenPreload;
+late final Future<void> Function()? openPlatformDebugger;
 final ValueNotifier<AdEvent?> latestAdEvent = ValueNotifier(null);
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  adPlugin = AdPlugin(
-    config: AdPluginConfig(
-      configRepository: MyConfigRepository(),
-      eventReporter: MyAdEventReporter(
-        onEvent: (event) => latestAdEvent.value = event,
+  final platformTest = selectedPlatformTestConfig;
+  final missingValues = platformTest.missingRequiredValues;
+  if (missingValues.isNotEmpty) {
+    runApp(
+      PlatformConfigurationRequiredApp(
+        platformName: platformTest.displayName,
+        missingValues: missingValues,
       ),
-      placementPolicies: buildPlacementPolicies(),
-      onAdNotReady: _onAdNotReady,
-      verboseLogging: true,
-      enableHealthMetrics: true,
-      nativeAdCloseClickPercent: 0,
-      fullscreenNativePresenter: FullscreenNativeAdDialog.show,
+    );
+    return;
+  }
+
+  final platform = switch (platformTest.platform) {
+    AdTestPlatform.admob => AdmobPlatform(),
+    AdTestPlatform.max => MaxPlatform(
+      sdkKey: platformTest.sdkKey,
+      testDeviceAdvertisingIds: platformTest.testDeviceAdvertisingIds,
     ),
+    AdTestPlatform.topon => TopOnPlatform(
+      appId: platformTest.appId,
+      appKey: platformTest.appKey,
+      debugKey: platformTest.debugKey.trim().isEmpty
+          ? null
+          : platformTest.debugKey,
+    ),
+  };
+  openPlatformDebugger = switch (platform) {
+    MaxPlatform max => () async {
+      max.showMediationDebugger();
+    },
+    TopOnPlatform topon when platformTest.debugKey.trim().isNotEmpty =>
+      topon.showDebugger,
+    _ => null,
+  };
+
+  adPlugin = AdPlugin(
+    config: localAdConfig,
+    platforms: [platform],
+    onEvent: (event) => latestAdEvent.value = event,
+    onAdNotReady: _onAdNotReady,
+    verboseLogging: true,
   );
 
   await adPlugin.init();
@@ -79,6 +108,41 @@ Future<void> main() async {
   );
 
   runApp(const AdPluginDemoApp());
+}
+
+class PlatformConfigurationRequiredApp extends StatelessWidget {
+  const PlatformConfigurationRequiredApp({
+    super.key,
+    required this.platformName,
+    required this.missingValues,
+  });
+
+  final String platformName;
+  final List<String> missingValues;
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      debugShowCheckedModeBanner: false,
+      home: Scaffold(
+        appBar: AppBar(title: Text('$platformName 测试配置')),
+        body: ListView(
+          padding: const EdgeInsets.all(16),
+          children: [
+            const Text('缺少以下 --dart-define 参数：'),
+            const SizedBox(height: 12),
+            for (final value in missingValues)
+              ListTile(
+                dense: true,
+                contentPadding: EdgeInsets.zero,
+                leading: const Icon(Icons.close),
+                title: Text(value),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 void _onAdNotReady(AdNotReadyEvent event) {
@@ -212,16 +276,16 @@ class _DemoHomePageState extends State<DemoHomePage> {
     });
   }
 
-  Future<void> _showFullscreen(PlacementType p, {String? eventName}) async {
+  Future<void> _showFullscreen(String p, {String? eventName}) async {
     if (_showingFullscreen) return;
     setState(() {
       _showingFullscreen = true;
-      _fsStatus = '正在展示 ${p.name}...';
+      _fsStatus = '正在展示 $p...';
     });
     final shown = await adPlugin.show(
       p,
       context: context,
-      eventName: eventName ?? p.name,
+      eventName: eventName ?? p,
       closePassThroughPercent: 0,
     );
     setState(() {
@@ -315,23 +379,7 @@ class _DemoHomePageState extends State<DemoHomePage> {
 
   // ── 健康度 ───────────────────────────────────────────────
 
-  String _healthSummary() {
-    final m = adPlugin.healthMetrics;
-    if (m == null) return '健康度指标未启用';
-
-    final buf = StringBuffer();
-    for (final s in m.allSnapshots()) {
-      buf.writeln(
-        '${s.placement.name}: '
-        '填充率=${(s.fillRate * 100).toStringAsFixed(0)}% '
-        '平均延迟=${s.avgLoadLatency.inMilliseconds}ms '
-        '展示率=${(s.showRate * 100).toStringAsFixed(0)}% '
-        '加载=${s.loadSuccesses}/${s.loadAttempts}',
-      );
-    }
-    if (buf.isEmpty) return '暂无数据';
-    return buf.toString();
-  }
+  String _healthSummary() => '健康度指标已移至 onEvent 回调自行统计';
 
   // ── UI ───────────────────────────────────────────────────
 
@@ -341,8 +389,20 @@ class _DemoHomePageState extends State<DemoHomePage> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('广告插件演示'),
+        title: Text('广告插件演示 · ${selectedPlatformTestConfig.displayName}'),
         actions: [
+          if (openPlatformDebugger != null)
+            IconButton(
+              tooltip: '平台调试工具',
+              icon: const Icon(Icons.bug_report_outlined),
+              onPressed: () async {
+                try {
+                  await openPlatformDebugger!();
+                } catch (error) {
+                  _toastMessage('打开平台调试工具失败：$error');
+                }
+              },
+            ),
           IconButton(
             tooltip: '健康度指标',
             icon: const Icon(Icons.analytics_outlined),
@@ -430,7 +490,11 @@ class _DemoHomePageState extends State<DemoHomePage> {
                     ? '正在依次加载两条素材...'
                     : '完整缓存：${_playMiddleAds.length}/2',
                 trailing: _playMiddleAds.length == 2
-                    ? DualNativeAdView(ads: _playMiddleAds, height: 560)
+                    ? DualNativeAdView(
+                        ads: _playMiddleAds,
+                        height: 560,
+                        itemBuilder: (ad) => adPlugin.nativeWidget(ad),
+                      )
                     : null,
               ),
 
@@ -440,7 +504,7 @@ class _DemoHomePageState extends State<DemoHomePage> {
                 '全局 Banner',
                 '全局缓存，跨页面持久；可手动加载和销毁。',
                 trailing: _bannerReady && _bannerAd != null
-                    ? adPlugin.widgetFactory.bannerWidget(_bannerAd!)
+                    ? adPlugin.bannerWidget(_bannerAd!)
                     : const Text(
                         'Banner 未就绪',
                         style: TextStyle(color: Colors.grey),
@@ -742,7 +806,7 @@ class _HomeNativeSceneState extends State<_HomeNativeScene> {
         else if (_ad == null)
           const SizedBox(height: 96, child: Center(child: Text('当前场景加载失败')))
         else
-          adPlugin.widgetFactory.nativeWidget(_ad!, height: 280),
+          adPlugin.nativeWidget(_ad!, height: 280),
       ],
     );
   }
@@ -874,7 +938,7 @@ class _InlineBannerDemoPageState extends State<InlineBannerDemoPage> {
                   children: [
                     Text('Banner #${i + 1}', style: tt.labelMedium),
                     const SizedBox(height: 4),
-                    Center(child: adPlugin.widgetFactory.bannerWidget(_ads[i])),
+                    Center(child: adPlugin.bannerWidget(_ads[i])),
                   ],
                 ),
               ),

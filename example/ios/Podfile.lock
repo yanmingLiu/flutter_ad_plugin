@@ -1,16 +1,41 @@
 PODS:
+  - applovin_max (4.6.4):
+    - AppLovinSDK (= 13.6.3)
+    - Flutter
+  - AppLovinSDK (13.6.3)
   - Flutter (1.0.0)
+  - secmtp_sdk (1.0.16):
+    - Flutter
+  - TPNiOS (6.5.82):
+    - TPNiOS/TPNSDK (= 6.5.82)
+  - TPNiOS/TPNSDK (6.5.82)
 
 DEPENDENCIES:
+  - applovin_max (from `.symlinks/plugins/applovin_max/ios`)
   - Flutter (from `Flutter`)
+  - secmtp_sdk (from `.symlinks/plugins/secmtp_sdk/ios`)
+  - TPNiOS (= 6.5.82)
+
+SPEC REPOS:
+  trunk:
+    - AppLovinSDK
+    - TPNiOS
 
 EXTERNAL SOURCES:
+  applovin_max:
+    :path: ".symlinks/plugins/applovin_max/ios"
   Flutter:
     :path: Flutter
+  secmtp_sdk:
+    :path: ".symlinks/plugins/secmtp_sdk/ios"
 
 SPEC CHECKSUMS:
+  applovin_max: 1347613044a72cbdf006bdbb6cf607cd6f32699f
+  AppLovinSDK: f3da9503e8193d8c4badc1a9965d73a0779812fa
   Flutter: 71a624a5bc0c04062bf19101d501e466baf2fb47
+  secmtp_sdk: 436821cd2a85c7cd5acbbea32a0125a9f90c7f42
+  TPNiOS: a6875f8102e7fd618911659877cc5133f28571ad
 
-PODFILE CHECKSUM: ce2a4dd764e1c7aeed6a7cdc5e61d092b6dc6d32
+PODFILE CHECKSUM: 07d50f982579918062ac517368c899423c08c7a7
 
 COCOAPODS: 1.16.2

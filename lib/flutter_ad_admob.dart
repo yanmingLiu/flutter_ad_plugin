@@ -1,18 +1,70 @@
+/// AdMob 平台实现。
+///
+/// 一个平台一个文件：SDK 初始化、广告适配器和 widget 渲染都在这里，
+/// 宿主只需要注册对应的 Platform 对象。
+library;
+
 import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
 
-import '../../api/fullscreen_native_presenter.dart';
-import '../../core/ad_config.dart';
-import '../../core/ad_enums.dart';
-import '../../core/ad_models.dart';
-import '../../utils/ad_logger.dart';
-import '../../utils/cancellation_token.dart';
-import '../ad_adapter.dart';
-import '../ad_callback.dart';
-import '../ad_loader_mixin.dart';
-import '../ad_registry.dart';
+import 'models.dart';
+import 'platform.dart';
+
+/// Registers every AdMob adapter with the plugin in one step.
+///
+/// ---
+/// 一步注册全部 AdMob 适配器。宿主只需在 `platforms` 中放入
+/// `AdmobPlatform()`，无需手工拼装 Adapter。
+class AdmobPlatform implements AdPlatform {
+  AdmobPlatform({AppLogger? logger}) : _logger = logger;
+
+  final AppLogger? _logger;
+
+  @override
+  AdSource get source => AdSource.admob;
+
+  @override
+  Future<void> init() => MobileAds.instance.initialize();
+
+  @override
+  List<FullscreenAdAdapter> get fullscreenAdapters => [
+    AdmobOpenAdapter(logger: _logger),
+    AdmobInterstitialAdapter(logger: _logger),
+    AdmobRewardedAdapter(logger: _logger),
+    AdmobRewardedInterstitialAdapter(logger: _logger),
+  ];
+
+  @override
+  List<InlineAdAdapter> get inlineAdapters => [
+    AdmobNativeAdapter(logger: _logger),
+    AdmobBannerAdapter(logger: _logger),
+  ];
+
+  @override
+  Widget? bannerWidget(Object ad) {
+    if (ad is BannerAd) {
+      return SizedBox(
+        width: ad.size.width.toDouble(),
+        height: ad.size.height.toDouble(),
+        child: AdWidget(ad: ad),
+      );
+    }
+    return null;
+  }
+
+  @override
+  Widget? nativeWidget(Object ad, {double height = 280, bool expand = false}) {
+    if (ad is NativeAd) {
+      return NativeAdView(ad: ad, height: height, expand: expand);
+    }
+    return null;
+  }
+
+  @override
+  void dispose() {}
+}
 
 /// Helper: extract the network name from an ad response.
 String? _networkName(AdWithoutView ad) =>
@@ -21,22 +73,13 @@ String? _networkName(AdWithoutView ad) =>
 String? _nativeNetworkName(Ad ad) =>
     (ad as NativeAd).responseInfo?.loadedAdapterResponseInfo?.adSourceName;
 
-/// AdMob SDK 初始化器
-class AdmobSdkInitializer implements AdSourceSdkInitializer {
-  @override
-  AdSource get source => AdSource.admob;
-
-  @override
-  Future<void> init() async => MobileAds.instance.initialize();
-}
-
 /// AdMob 全屏广告适配器基类。
 ///
 /// Uses [CommonLoaderMixin] to eliminate duplicated Completer+Timer boilerplate.
 /// Emits [AdRawCallback] via [onCallback] instead of calling [AdEventReporter].
 abstract class _AdmobFullscreenAdapter<TAd extends AdWithoutView>
     with CommonLoaderMixin<TAd>
-    implements AdTypeAdapter {
+    implements FullscreenAdAdapter {
   _AdmobFullscreenAdapter({AppLogger? logger}) : _logger = logger ?? log;
 
   final AppLogger _logger;
@@ -58,6 +101,12 @@ abstract class _AdmobFullscreenAdapter<TAd extends AdWithoutView>
   );
 
   Future<void> _showSdkAd(TAd ad);
+
+  void Function(int amount, String? label)? _rewardCallback;
+
+  void _emitRewarded(int amount, String? label) {
+    _rewardCallback?.call(amount, label);
+  }
 
   @override
   Future<AdLoadResult<Object>> load({
@@ -157,6 +206,17 @@ abstract class _AdmobFullscreenAdapter<TAd extends AdWithoutView>
       ),
     );
 
+    _rewardCallback = (amount, label) {
+      onCallback?.call(
+        AdRewardedCallback(
+          fullscreenAd,
+          amount,
+          label,
+          _networkName(fullscreenAd),
+        ),
+      );
+    };
+
     try {
       await _showSdkAd(fullscreenAd);
     } catch (e) {
@@ -169,6 +229,8 @@ abstract class _AdmobFullscreenAdapter<TAd extends AdWithoutView>
       onCallback?.call(
         AdShowFailedCallback(fullscreenAd, null, e.toString(), null),
       );
+    } finally {
+      _rewardCallback = null;
     }
 
     return completer.future;
@@ -284,7 +346,11 @@ class AdmobRewardedAdapter extends _AdmobFullscreenAdapter<RewardedAd> {
 
   @override
   Future<void> _showSdkAd(RewardedAd ad) {
-    return ad.show(onUserEarnedReward: (ad, item) {});
+    return ad.show(
+      onUserEarnedReward: (ad, item) {
+        _emitRewarded(item.amount.toInt(), item.type);
+      },
+    );
   }
 }
 
@@ -323,7 +389,11 @@ class AdmobRewardedInterstitialAdapter
 
   @override
   Future<void> _showSdkAd(RewardedInterstitialAd ad) {
-    return ad.show(onUserEarnedReward: (ad, item) {});
+    return ad.show(
+      onUserEarnedReward: (ad, item) {
+        _emitRewarded(item.amount.toInt(), item.type);
+      },
+    );
   }
 }
 
@@ -331,16 +401,13 @@ class AdmobRewardedInterstitialAdapter
 ///
 /// No longer maintains static attribution maps. Attribution is managed by
 /// the engine's [AdCacheService]. Emits [AdRawCallback] via [onCallback].
-class AdmobNativeAdapter implements AdTypeAdapter, NativeAdClickTracker {
+class AdmobNativeAdapter implements InlineAdAdapter {
   AdmobNativeAdapter({AppLogger? logger}) : _logger = logger ?? log;
 
   final AppLogger _logger;
 
   static const _fullScreenFactoryId = 'fullScreenNative';
   static const _homeFactoryId = 'homeListTile';
-
-  final Map<NativeAd, _NativeAdContext> _contexts = {};
-  final Map<NativeAd, Set<VoidCallback>> _clickListeners = {};
 
   @override
   AdSource get source => AdSource.admob;
@@ -349,7 +416,7 @@ class AdmobNativeAdapter implements AdTypeAdapter, NativeAdClickTracker {
   AdType get type => AdType.native;
 
   @override
-  Future<AdLoadResult<Object>> load({
+  Future<AdLoadResult<Object>> prepare({
     required PlacementType placement,
     required AdUnitConfig unit,
     required Duration timeout,
@@ -384,14 +451,11 @@ class AdmobNativeAdapter implements AdTypeAdapter, NativeAdClickTracker {
       }
     });
 
-    final adContext = _NativeAdContext();
     late final NativeAd ad;
     var adDisposed = false;
     void disposeAd(NativeAd nativeAd) {
       if (adDisposed) return;
       adDisposed = true;
-      _contexts.remove(nativeAd);
-      _clickListeners.remove(nativeAd);
       nativeAd.dispose();
     }
 
@@ -425,16 +489,6 @@ class AdmobNativeAdapter implements AdTypeAdapter, NativeAdClickTracker {
         }
       },
       onAdClicked: (ad) {
-        if (ad is NativeAd) {
-          final context = _contexts.putIfAbsent(ad, _NativeAdContext.new);
-          context.clicked = true;
-          final listeners = _clickListeners[ad];
-          if (listeners != null) {
-            for (final listener in List<VoidCallback>.of(listeners)) {
-              listener();
-            }
-          }
-        }
         onCallback?.call(AdClickedCallback(ad, _nativeNetworkName(ad)));
       },
       onAdImpression: (ad) {
@@ -465,7 +519,6 @@ class AdmobNativeAdapter implements AdTypeAdapter, NativeAdClickTracker {
         listener: listener,
       );
     }
-    _contexts[ad] = adContext;
     final removeCancellationListener = cancellationToken?.addListener(() {
       if (!completer.isCompleted) {
         completer.complete(
@@ -495,67 +548,18 @@ class AdmobNativeAdapter implements AdTypeAdapter, NativeAdClickTracker {
   }
 
   @override
-  Future<AdShowResult> show({
-    required PlacementType placement,
-    BuildContext? context,
-    required String eventName,
-    required Object ad,
-    VoidCallback? onAdShowed,
-    VoidCallback? onClosed,
-    int closePassThroughPercent = 0,
-    void Function(AdRawCallback callback)? onCallback,
-  }) async {
-    onAdShowed?.call();
-    return AdShowResult.success();
-  }
-
-  @override
   void dispose(Object ad) {
     if (ad is NativeAd) {
-      _contexts.remove(ad);
-      _clickListeners.remove(ad);
       ad.dispose();
     }
   }
-
-  @override
-  bool hasClicked(Object ad) {
-    return ad is NativeAd && (_contexts[ad]?.clicked ?? false);
-  }
-
-  @override
-  void addClickListener(Object ad, VoidCallback listener) {
-    if (ad is! NativeAd) {
-      return;
-    }
-    _clickListeners.putIfAbsent(ad, () => <VoidCallback>{}).add(listener);
-  }
-
-  @override
-  void removeClickListener(Object ad, VoidCallback listener) {
-    if (ad is! NativeAd) {
-      return;
-    }
-    final listeners = _clickListeners[ad];
-    if (listeners == null) {
-      return;
-    }
-    listeners.remove(listener);
-    if (listeners.isEmpty) {
-      _clickListeners.remove(ad);
-    }
-  }
-}
-
-class _NativeAdContext {
-  bool clicked = false;
 }
 
 /// AdMob Banner 广告适配器。
 ///
 /// Banner ads are inline widgets rendered via [AdWidget].
 /// No longer maintains static attribution maps.
-class AdmobBannerAdapter implements AdTypeAdapter {
+class AdmobBannerAdapter implements InlineAdAdapter {
   AdmobBannerAdapter({AppLogger? logger}) : _logger = logger ?? log;
 
   final AppLogger _logger;
@@ -567,7 +571,7 @@ class AdmobBannerAdapter implements AdTypeAdapter {
   AdType get type => AdType.banner;
 
   @override
-  Future<AdLoadResult<Object>> load({
+  Future<AdLoadResult<Object>> prepare({
     required PlacementType placement,
     required AdUnitConfig unit,
     required Duration timeout,
@@ -706,24 +710,38 @@ class AdmobBannerAdapter implements AdTypeAdapter {
   }
 
   @override
-  Future<AdShowResult> show({
-    required PlacementType placement,
-    BuildContext? context,
-    required String eventName,
-    required Object ad,
-    VoidCallback? onAdShowed,
-    VoidCallback? onClosed,
-    int closePassThroughPercent = 0,
-    void Function(AdRawCallback callback)? onCallback,
-  }) async {
-    onAdShowed?.call();
-    return AdShowResult.success();
-  }
-
-  @override
   void dispose(Object ad) {
     if (ad is BannerAd) {
       ad.dispose();
     }
+  }
+}
+
+class NativeAdView extends StatelessWidget {
+  const NativeAdView({
+    super.key,
+    required this.ad,
+    this.height = 280,
+    this.expand = false,
+  });
+
+  /// 原始广告对象（AdMob NativeAd 或其他平台的广告对象）
+  final Object ad;
+  final double? height;
+  final bool expand;
+
+  @override
+  Widget build(BuildContext context) {
+    if (ad is NativeAd) {
+      final adWidget = AdWidget(ad: ad as NativeAd);
+      if (expand) {
+        return SizedBox.expand(child: adWidget);
+      }
+      return SizedBox(height: height, child: adWidget);
+    }
+
+    // 如果将来有其他平台，在这里继续扩展 else if (ad is MaxNativeAd) ...
+
+    return const SizedBox.shrink();
   }
 }

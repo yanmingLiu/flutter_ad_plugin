@@ -30,12 +30,30 @@ target 'Runner' do
   use_frameworks!
 
   flutter_install_all_ios_pods File.dirname(File.realpath(__FILE__))
+  # secmtp_sdk 1.0.16 references AnyThinkSDK headers but does not declare
+  # TPNiOS in its podspec. Keep the matching TopOn Core pod explicit here.
+  pod 'TPNiOS', '6.5.82'
   target 'RunnerTests' do
     inherit! :search_paths
   end
 end
 
 post_install do |installer|
+  secmtp_target = installer.pods_project.targets.find do |target|
+    target.name == 'secmtp_sdk'
+  end
+  topon_target = installer.pods_project.targets.find do |target|
+    target.name == 'TPNiOS'
+  end
+  if secmtp_target && topon_target
+    secmtp_target.add_dependency(topon_target)
+    secmtp_target.build_configurations.each do |config|
+      config.build_settings['FRAMEWORK_SEARCH_PATHS'] ||= ['$(inherited)']
+      config.build_settings['FRAMEWORK_SEARCH_PATHS'] <<
+        '${PODS_XCFRAMEWORKS_BUILD_DIR}/TPNiOS/TPNSDK'
+    end
+  end
+
   installer.pods_project.targets.each do |target|
     flutter_additional_ios_build_settings(target)
   end

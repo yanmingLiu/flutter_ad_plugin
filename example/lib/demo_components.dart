@@ -1,17 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/widget_previews.dart';
-import 'package:flutter_ad_plugin/flutter_ad_plugin.dart';
 
 class DualNativeAdView extends StatelessWidget {
   const DualNativeAdView({
     super.key,
     required this.ads,
+    required this.itemBuilder,
     this.height = 600,
     this.direction = Axis.vertical,
     this.spacing = 0,
   });
 
   final List<Object> ads;
+  final Widget Function(Object ad) itemBuilder;
   final double height;
   final Axis direction;
   final double spacing;
@@ -21,9 +22,9 @@ class DualNativeAdView extends StatelessWidget {
     if (ads.length < 2) return const SizedBox.shrink();
 
     final children = <Widget>[
-      Expanded(child: NativeAdView(ad: ads[0])),
+      Expanded(child: itemBuilder(ads[0])),
       if (spacing > 0) SizedBox(width: spacing, height: spacing),
-      Expanded(child: NativeAdView(ad: ads[1])),
+      Expanded(child: itemBuilder(ads[1])),
     ];
     return SizedBox(
       height: height,
