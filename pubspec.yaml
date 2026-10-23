@@ -31,16 +31,11 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+    
   applovin_max: ^4.6.4
-  google_mobile_ads: 8.0.0
+  google_mobile_ads: 9.2.0
   secmtp_sdk: ^1.0.16
-  # gma_mediation_applovin: ^2.6.1
-  # gma_mediation_inmobi: ^2.1.0
-  # gma_mediation_liftoffmonetize: ^1.5.0
-  # gma_mediation_meta: ^1.5.2
-  # gma_mediation_mintegral: ^2.1.0
-  # gma_mediation_pangle: ^3.6.0
-  # gma_mediation_unity: ^1.8.0
+  
 
 dev_dependencies:
   flutter_test:

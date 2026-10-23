@@ -6,7 +6,8 @@
 
 Dart SDK：`^3.10.0`
 
-AdMob Flutter SDK：`google_mobile_ads 8.0.0`
+AdMob Flutter SDK：`google_mobile_ads ^9.2.0`
+MAX Flutter SDK：`applovin_max ^4.6.4`
 
 ## 能力与边界
 
@@ -194,6 +195,43 @@ flowchart TB
 
 ## 安装
 
+本仓库采用解耦子包架构，宿主项目可**按需引入**所需广告平台（例如只接 AdMob + MAX 时，无需打包 TopOn 及其庞大原生 SDK）：
+
+### 推荐：按需接入（只接 AdMob + MAX）
+
+```yaml
+dependencies:
+  # 核心调度引擎（瀑布流、缓存、冷却、事件归因，0 广告平台 SDK 依赖）
+  flutter_ad_core:
+    git:
+      url: git@github.com:yanmingLiu/flutter_ad_plugin.git
+      path: packages/flutter_ad_core
+      ref: main
+
+  # AdMob 适配器
+  flutter_ad_admob:
+    git:
+      url: git@github.com:yanmingLiu/flutter_ad_plugin.git
+      path: packages/flutter_ad_admob
+      ref: main
+
+  # AppLovin MAX 适配器
+  flutter_ad_max:
+    git:
+      url: git@github.com:yanmingLiu/flutter_ad_plugin.git
+      path: packages/flutter_ad_max
+      ref: main
+
+  # 如需 TopOn (secmtp_sdk)，按需取消注释：
+  # flutter_ad_topon:
+  #   git:
+  #     url: git@github.com:yanmingLiu/flutter_ad_plugin.git
+  #     path: packages/flutter_ad_topon
+  #     ref: main
+```
+
+### 完整引入（兼容旧版全量包）
+
 ```yaml
 dependencies:
   flutter_ad_plugin:
@@ -202,7 +240,64 @@ dependencies:
       ref: main
 ```
 
-宿主还需要按照 `google_mobile_ads` 的要求配置 Android AdMob App ID 和 iOS `GADApplicationIdentifier`。
+---
+
+## 广告源 (Mediation Networks) 集成说明
+
+> **重要原则**：AdMob / MAX 的各聚合广告源（如 Meta, Mintegral, Pangle, Unity, InMobi 等）属于原生依赖，**均在宿主 App 原生层按需配置**，插件层不写死捆绑，避免所有项目强制背负不需要的 SDK 包体积和隐私权限。
+
+### 1. Android 配置 (`android/app/build.gradle.kts` 或 `build.gradle`)
+在宿主项目的 `dependencies` 中添加需要的 Mediation Adapters：
+
+```kotlin
+dependencies {
+    // AdMob Mediation 示例 (按需引入)
+    implementation("com.google.ads.mediation:pangle:6.4.0.6.0")
+    implementation("com.google.ads.mediation:facebook:6.18.0.0")
+    implementation("com.google.ads.mediation:mintegral:16.8.61.0")
+    implementation("com.google.ads.mediation:applovin:13.1.0.0")
+
+    // MAX Mediation 示例 (按需引入)
+    // implementation("com.applovin.mediation:bytedance-adapter:6.4.0.6.0")
+    // implementation("com.applovin.mediation:google-adapter:23.6.0.0")
+}
+```
+
+并在 `AndroidManifest.xml` 中配置主平台的 App ID / Key：
+```xml
+<application>
+    <!-- AdMob App ID -->
+    <meta-data
+        android:name="com.google.android.gms.ads.APPLICATION_ID"
+        android:value="ca-app-pub-xxxxxxxxxxxxxxxx~yyyyyyyyyy"/>
+    <!-- MAX SDK Key (如果使用) -->
+    <meta-data
+        android:name="applovin.sdk.key"
+        android:value="YOUR_APPLOVIN_SDK_KEY"/>
+</application>
+```
+
+### 2. iOS 配置 (`ios/Podfile`)
+在宿主项目的 `ios/Podfile` 中添加对应的 Pods：
+
+```ruby
+target 'Runner' do
+  use_frameworks!
+  flutter_install_all_ios_pods File.dirname(File.realpath(__FILE__))
+
+  # AdMob Mediation 示例 (按需引入)
+  pod 'GoogleMobileAdsMediationPangle'
+  pod 'GoogleMobileAdsMediationFacebook'
+  pod 'GoogleMobileAdsMediationMintegral'
+  pod 'GoogleMobileAdsMediationAppLovin'
+
+  # MAX Mediation 示例 (按需引入)
+  # pod 'AppLovinMediationByteDanceAdapter'
+  # pod 'AppLovinMediationGoogleAdapter'
+end
+```
+
+并在 `Info.plist` 中配置 `GADApplicationIdentifier` 与 `AppLovinSdkKey`。
 
 ## 快速接入
 

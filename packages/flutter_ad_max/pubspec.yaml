@@ -1,0 +1,20 @@
+name: flutter_ad_max
+description: "AppLovin MAX adapter for flutter_ad orchestration engine."
+version: 0.1.0
+publish_to: 'none'
+
+environment:
+  sdk: ^3.10.0
+  flutter: ">=3.24.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_ad_core:
+    path: ../flutter_ad_core
+  applovin_max: ^4.6.4
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.0
