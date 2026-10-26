@@ -204,28 +204,28 @@ dependencies:
   # 核心调度引擎（瀑布流、缓存、冷却、事件归因，0 广告平台 SDK 依赖）
   flutter_ad_core:
     git:
-      url: git@github.com:yanmingLiu/flutter_ad_plugin.git
+      url: https://github.com/yanmingLiu/flutter_ad_plugin.git
       path: packages/flutter_ad_core
       ref: main
 
   # AdMob 适配器
   flutter_ad_admob:
     git:
-      url: git@github.com:yanmingLiu/flutter_ad_plugin.git
+      url: https://github.com/yanmingLiu/flutter_ad_plugin.git
       path: packages/flutter_ad_admob
       ref: main
 
   # AppLovin MAX 适配器
   flutter_ad_max:
     git:
-      url: git@github.com:yanmingLiu/flutter_ad_plugin.git
+      url: https://github.com/yanmingLiu/flutter_ad_plugin.git
       path: packages/flutter_ad_max
       ref: main
 
   # 如需 TopOn (secmtp_sdk)，按需取消注释：
   # flutter_ad_topon:
   #   git:
-  #     url: git@github.com:yanmingLiu/flutter_ad_plugin.git
+  #     url: https://github.com/yanmingLiu/flutter_ad_plugin.git
   #     path: packages/flutter_ad_topon
   #     ref: main
 ```
@@ -236,7 +236,7 @@ dependencies:
 dependencies:
   flutter_ad_plugin:
     git:
-      url: git@github.com:yanmingLiu/flutter_ad_plugin.git
+      url: https://github.com/yanmingLiu/flutter_ad_plugin.git
       ref: main
 ```
 
