@@ -382,8 +382,13 @@ abstract class AdConfigRepository {
 class AdAttribution {
   PlacementType placement;
   String eventName;
+  Map<String, dynamic>? extras;
 
-  AdAttribution({required this.placement, required this.eventName});
+  AdAttribution({
+    required this.placement,
+    required this.eventName,
+    this.extras,
+  });
 }
 
 /// Sealed hierarchy for ad slot states in cache.
@@ -628,6 +633,9 @@ class AdEvent {
   /// 宿主传入的广告场景，插件原样透传。
   final String? eventName;
 
+  /// 宿主调用展示/加载时传入的业务自定义参数（如 uid、linkid 等），插件原样透传。
+  final Map<String, dynamic>? extras;
+
   final String? network;
 
   AdEvent({
@@ -645,6 +653,7 @@ class AdEvent {
     this.errorReason,
     this.timestamp,
     this.eventName,
+    this.extras,
     this.network,
   });
 
@@ -669,6 +678,7 @@ class AdEvent {
       'error_reason': errorReason,
       'timestamp': timestamp?.toIso8601String(),
       'event_name': eventName,
+      'extras': extras,
       'network': network,
     };
   }
