@@ -156,18 +156,21 @@ class AdCacheService {
     Object ad,
     PlacementType placement, {
     required String eventName,
+    Map<String, dynamic>? extras,
   }) {
     final existing = _attributions[ad];
     if (existing == null) {
       _attributions[ad] = AdAttribution(
         placement: placement,
         eventName: eventName,
+        extras: extras,
       );
       return;
     }
     existing
       ..placement = placement
-      ..eventName = eventName;
+      ..eventName = eventName
+      ..extras = extras;
   }
 
   /// Gets the attribution for an ad object.
@@ -219,6 +222,7 @@ class AdEventMapper {
     AdRawCallback callback, {
     PlacementType? placement,
     required String eventName,
+    Map<String, dynamic>? extras,
     AdType? adType,
     AdSource? source,
     String? adUnitId,
@@ -233,6 +237,7 @@ class AdEventMapper {
           adUnitId: adUnitId,
           timestamp: DateTime.now(),
           eventName: eventName,
+          extras: extras,
           network: network,
         );
 
@@ -251,6 +256,7 @@ class AdEventMapper {
           currency: currencyCode,
           timestamp: DateTime.now(),
           eventName: eventName,
+          extras: extras,
           network: network,
         );
 
@@ -263,6 +269,7 @@ class AdEventMapper {
           adUnitId: adUnitId,
           timestamp: DateTime.now(),
           eventName: eventName,
+          extras: extras,
           network: network,
         );
 
@@ -275,6 +282,7 @@ class AdEventMapper {
           adUnitId: adUnitId,
           timestamp: DateTime.now(),
           eventName: eventName,
+          extras: extras,
           network: network,
         );
 
@@ -289,6 +297,7 @@ class AdEventMapper {
           rewardLabel: label,
           timestamp: DateTime.now(),
           eventName: eventName,
+          extras: extras,
           network: network,
         );
 
@@ -301,6 +310,7 @@ class AdEventMapper {
           adUnitId: adUnitId,
           timestamp: DateTime.now(),
           eventName: eventName,
+          extras: extras,
           network: network,
         );
 
@@ -319,6 +329,7 @@ class AdEventMapper {
           errorReason: errorMessage,
           timestamp: DateTime.now(),
           eventName: eventName,
+          extras: extras,
           network: network,
         );
     }
@@ -995,11 +1006,13 @@ class AdLoaderService {
       final attr = _cache.getAttribution(callback.ad);
       final p = attr?.placement ?? placement;
       final en = attr?.eventName ?? eventName;
+      final ex = attr?.extras;
 
       final event = _eventMapper.map(
         callback,
         placement: p,
         eventName: en,
+        extras: ex,
         adType: unit.type,
         source: unit.source,
         adUnitId: unit.id,
@@ -1098,6 +1111,7 @@ class AdPresenter {
     PlacementType placement, {
     BuildContext? context,
     required String eventName,
+    Map<String, dynamic>? extras,
     VoidCallback? onAdShowed,
     int? closePassThroughPercent,
     AdNotReadyCallback? onAdNotReady,
@@ -1126,6 +1140,7 @@ class AdPresenter {
       _reportShowFail(
         placement: placement,
         eventName: eventName,
+        extras: extras,
         errorReason: _guardErrorReason(guardResult),
       );
       return AdShowResult.failure(
@@ -1146,6 +1161,7 @@ class AdPresenter {
       _reportShowFail(
         placement: placement,
         eventName: eventName,
+        extras: extras,
         errorReason: 'no_cache',
       );
       unawaited(_loader.preload(placement, eventName: eventName));
@@ -1173,6 +1189,7 @@ class AdPresenter {
       // ignore: use_build_context_synchronously
       context: context,
       eventName: eventName,
+      extras: extras,
       onAdShowed: onAdShowed,
       closePassThroughPercent: closePassThroughPercent,
     );
@@ -1224,6 +1241,7 @@ class AdPresenter {
     PlacementType placement, {
     BuildContext? context,
     required String eventName,
+    Map<String, dynamic>? extras,
     VoidCallback? onAdShowed,
     int? closePassThroughPercent,
     AdNotReadyCallback? onAdNotReady,
@@ -1239,6 +1257,7 @@ class AdPresenter {
         // ignore: use_build_context_synchronously
         context: context,
         eventName: eventName,
+        extras: extras,
         onAdShowed: onAdShowed,
         closePassThroughPercent: closePassThroughPercent,
         onAdNotReady: onAdNotReady,
@@ -1260,6 +1279,7 @@ class AdPresenter {
       _reportShowFail(
         placement: placement,
         eventName: eventName,
+        extras: extras,
         errorReason: _guardErrorReason(guardResult),
       );
       return AdSequenceShowResult(
@@ -1280,6 +1300,7 @@ class AdPresenter {
       _reportShowFail(
         placement: placement,
         eventName: eventName,
+        extras: extras,
         errorReason: 'no_cache',
       );
       for (final target in sequencePlacements) {
@@ -1320,6 +1341,7 @@ class AdPresenter {
       firstSlot.ad,
       firstSlot.placement,
       eventName: eventName,
+      extras: extras,
     );
     for (final target in sequencePlacements.where((p) => !_cache.hasSlot(p))) {
       unawaited(_loader.preloadPlacement(target, eventName: eventName));
@@ -1337,6 +1359,7 @@ class AdPresenter {
       // ignore: use_build_context_synchronously
       context: context,
       eventName: eventName,
+      extras: extras,
       onAdShowed: onAdShowed,
       closePassThroughPercent: closePassThroughPercent,
     );
@@ -1371,6 +1394,7 @@ class AdPresenter {
       secondSlot.ad,
       secondSlot.placement,
       eventName: eventName,
+      extras: extras,
     );
     final usedHighValueSecond =
         highValue != null && secondSlot.placement == highValue;
@@ -1386,6 +1410,7 @@ class AdPresenter {
       // ignore: use_build_context_synchronously
       context: context,
       eventName: eventName,
+      extras: extras,
       onAdShowed: onAdShowed,
       closePassThroughPercent: closePassThroughPercent,
     );
@@ -1423,12 +1448,18 @@ class AdPresenter {
     PlacementType placement, {
     String? cacheId,
     required String eventName,
+    Map<String, dynamic>? extras,
   }) {
     final slot = _cache.firstSlot(placement, cacheId: cacheId);
     if (slot == null) return null;
 
-    _cache.setAttribution(slot.ad, placement, eventName: eventName);
-    _reportRetrieval(slot, eventName: eventName);
+    _cache.setAttribution(
+      slot.ad,
+      placement,
+      eventName: eventName,
+      extras: extras,
+    );
+    _reportRetrieval(slot, eventName: eventName, extras: extras);
     return slot.ad;
   }
 
@@ -1437,25 +1468,40 @@ class AdPresenter {
     int count = 2,
     String? cacheId,
     required String eventName,
+    Map<String, dynamic>? extras,
   }) {
     final slots = _cache
         .getSlots(placement, cacheId: cacheId)
         .take(count)
         .toList();
     for (final slot in slots) {
-      _cache.setAttribution(slot.ad, placement, eventName: eventName);
-      _reportRetrieval(slot, eventName: eventName);
+      _cache.setAttribution(
+        slot.ad,
+        placement,
+        eventName: eventName,
+        extras: extras,
+      );
+      _reportRetrieval(slot, eventName: eventName, extras: extras);
     }
     return slots.map((s) => s.ad).toList();
   }
 
   // --- Banner Retrieval ---
 
-  Object? getBannerAd(PlacementType placement, {required String eventName}) {
+  Object? getBannerAd(
+    PlacementType placement, {
+    required String eventName,
+    Map<String, dynamic>? extras,
+  }) {
     final slot = _cache.firstSlot(placement);
     if (slot == null) return null;
-    _cache.setAttribution(slot.ad, placement, eventName: eventName);
-    _reportRetrieval(slot, eventName: eventName);
+    _cache.setAttribution(
+      slot.ad,
+      placement,
+      eventName: eventName,
+      extras: extras,
+    );
+    _reportRetrieval(slot, eventName: eventName, extras: extras);
     return slot.ad;
   }
 
@@ -1463,11 +1509,17 @@ class AdPresenter {
     PlacementType placement, {
     int count = 2,
     required String eventName,
+    Map<String, dynamic>? extras,
   }) {
     final slots = _cache.getSlots(placement).take(count).toList();
     for (final slot in slots) {
-      _cache.setAttribution(slot.ad, placement, eventName: eventName);
-      _reportRetrieval(slot, eventName: eventName);
+      _cache.setAttribution(
+        slot.ad,
+        placement,
+        eventName: eventName,
+        extras: extras,
+      );
+      _reportRetrieval(slot, eventName: eventName, extras: extras);
     }
     return slots.map((s) => s.ad).toList();
   }
@@ -1498,10 +1550,16 @@ class AdPresenter {
     required PlacementPolicy policy,
     BuildContext? context,
     required String eventName,
+    Map<String, dynamic>? extras,
     VoidCallback? onAdShowed,
     int? closePassThroughPercent,
   }) async {
-    _cache.setAttribution(slot.ad, slot.placement, eventName: eventName);
+    _cache.setAttribution(
+      slot.ad,
+      slot.placement,
+      eventName: eventName,
+      extras: extras,
+    );
     final adapter = _adapterRegistry.tryGet(slot.source, slot.type);
     if (adapter == null) {
       _guard.markShowFailed(slot.placement, policy);
@@ -1512,6 +1570,7 @@ class AdPresenter {
     final callback = _showCallback(
       requestedPlacement: showPlacement,
       eventName: eventName,
+      extras: extras,
       slot: slot,
     );
 
@@ -1523,6 +1582,7 @@ class AdPresenter {
       slot.source,
       slot.adUnitId,
       eventName: eventName,
+      extras: extras,
       requestedPlacement: showPlacement,
     );
 
@@ -1605,6 +1665,7 @@ class AdPresenter {
   void Function(AdRawCallback) _showCallback({
     required PlacementType requestedPlacement,
     required String eventName,
+    Map<String, dynamic>? extras,
     required AdSlotLoaded slot,
   }) {
     return (callback) {
@@ -1612,6 +1673,7 @@ class AdPresenter {
         callback,
         placement: slot.placement,
         eventName: eventName,
+        extras: extras,
         adType: slot.type,
         source: slot.source,
         adUnitId: slot.adUnitId,
@@ -1631,6 +1693,7 @@ class AdPresenter {
         errorReason: event.errorReason,
         timestamp: event.timestamp,
         eventName: event.eventName,
+        extras: event.extras,
         network: event.network,
       );
       _reporter.report(attributedEvent);
@@ -1638,7 +1701,11 @@ class AdPresenter {
     };
   }
 
-  void _reportRetrieval(AdSlotLoaded slot, {required String eventName}) {
+  void _reportRetrieval(
+    AdSlotLoaded slot, {
+    required String eventName,
+    Map<String, dynamic>? extras,
+  }) {
     _reportEvent(
       AdEventType.show,
       slot.placement,
@@ -1646,12 +1713,14 @@ class AdPresenter {
       slot.source,
       slot.adUnitId,
       eventName: eventName,
+      extras: extras,
     );
   }
 
   void _reportShowFail({
     required PlacementType placement,
     required String eventName,
+    Map<String, dynamic>? extras,
     required String errorReason,
   }) {
     _reportEvent(
@@ -1661,6 +1730,7 @@ class AdPresenter {
       null,
       null,
       eventName: eventName,
+      extras: extras,
     );
     _reportEvent(
       AdEventType.showFail,
@@ -1670,6 +1740,7 @@ class AdPresenter {
       null,
       errorReason: errorReason,
       eventName: eventName,
+      extras: extras,
     );
   }
 
@@ -1681,6 +1752,7 @@ class AdPresenter {
     String? id, {
     String? errorReason,
     required String eventName,
+    Map<String, dynamic>? extras,
     PlacementType? requestedPlacement,
   }) {
     final event = AdEvent(
@@ -1693,6 +1765,7 @@ class AdPresenter {
       errorReason: errorReason,
       timestamp: DateTime.now(),
       eventName: eventName,
+      extras: extras,
     );
     _logger.event(event);
     _reporter.report(event);

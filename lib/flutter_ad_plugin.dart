@@ -194,6 +194,7 @@ class AdPlugin {
     Object placement, {
     BuildContext? context,
     required String eventName,
+    Map<String, dynamic>? extras,
     int closePassThroughPercent = 0,
   }) {
     _assertInitialized();
@@ -201,6 +202,7 @@ class AdPlugin {
       _placement(placement),
       context: context,
       eventName: eventName,
+      extras: extras,
       closePassThroughPercent: closePassThroughPercent,
       onAdNotReady: _options.onAdNotReady,
     );
@@ -210,6 +212,7 @@ class AdPlugin {
     Object placement, {
     BuildContext? context,
     required String eventName,
+    Map<String, dynamic>? extras,
     int closePassThroughPercent = 0,
   }) {
     _assertInitialized();
@@ -217,6 +220,7 @@ class AdPlugin {
       _placement(placement),
       context: context,
       eventName: eventName,
+      extras: extras,
       closePassThroughPercent: closePassThroughPercent,
       onAdNotReady: _options.onAdNotReady,
     );
@@ -239,12 +243,14 @@ class AdPlugin {
     Object placement, {
     String? cacheId,
     required String eventName,
+    Map<String, dynamic>? extras,
   }) {
     _assertInitialized();
     return _presenter.getNativeAd(
       _placement(placement),
       cacheId: cacheId,
       eventName: eventName,
+      extras: extras,
     );
   }
 
@@ -253,6 +259,7 @@ class AdPlugin {
     int count = 2,
     String? cacheId,
     required String eventName,
+    Map<String, dynamic>? extras,
   }) {
     _assertInitialized();
     return _presenter.getNativeAds(
@@ -260,6 +267,7 @@ class AdPlugin {
       count: count,
       cacheId: cacheId,
       eventName: eventName,
+      extras: extras,
     );
   }
 
@@ -268,21 +276,31 @@ class AdPlugin {
     return _loader.preloadBanner(_placement(placement), eventName: eventName);
   }
 
-  Object? getBannerAd(Object placement, {required String eventName}) {
+  Object? getBannerAd(
+    Object placement, {
+    required String eventName,
+    Map<String, dynamic>? extras,
+  }) {
     _assertInitialized();
-    return _presenter.getBannerAd(_placement(placement), eventName: eventName);
+    return _presenter.getBannerAd(
+      _placement(placement),
+      eventName: eventName,
+      extras: extras,
+    );
   }
 
   List<Object> getBannerAds(
     Object placement, {
     int count = 2,
     required String eventName,
+    Map<String, dynamic>? extras,
   }) {
     _assertInitialized();
     return _presenter.getBannerAds(
       _placement(placement),
       count: count,
       eventName: eventName,
+      extras: extras,
     );
   }
 
