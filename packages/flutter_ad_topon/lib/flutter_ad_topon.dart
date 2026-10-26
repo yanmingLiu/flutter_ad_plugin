@@ -12,6 +12,8 @@ import 'package:secmtp_sdk/at_index.dart';
 import 'package:flutter_ad_core/models.dart';
 import 'package:flutter_ad_core/platform.dart';
 
+export 'package:flutter_ad_core/flutter_ad_core.dart';
+
 /// Callback used by SDK handles to emit core lifecycle events.
 typedef TopOnAdCallback = void Function(AdRawCallback callback);
 

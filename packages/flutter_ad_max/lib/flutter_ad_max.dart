@@ -12,6 +12,8 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_ad_core/models.dart';
 import 'package:flutter_ad_core/platform.dart';
 
+export 'package:flutter_ad_core/flutter_ad_core.dart';
+
 /// Callback type used by MAX handles to emit SDK-agnostic lifecycle events.
 typedef MaxAdCallback = void Function(AdRawCallback callback);
 

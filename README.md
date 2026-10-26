@@ -199,23 +199,18 @@ flowchart TB
 
 ### 推荐：按需接入（只接 AdMob + MAX）
 
+> **提示**：`flutter_ad_admob` 和 `flutter_ad_max` 会自动间接依赖并导出 `flutter_ad_core`，宿主工程通常**无需重复声明** `flutter_ad_core`，直接引入需要的平台即可：
+
 ```yaml
 dependencies:
-  # 核心调度引擎（瀑布流、缓存、冷却、事件归因，0 广告平台 SDK 依赖）
-  flutter_ad_core:
-    git:
-      url: https://github.com/yanmingLiu/flutter_ad_plugin.git
-      path: packages/flutter_ad_core
-      ref: main
-
-  # AdMob 适配器
+  # AdMob 适配器（自动包含 flutter_ad_core 与 google_mobile_ads）
   flutter_ad_admob:
     git:
       url: https://github.com/yanmingLiu/flutter_ad_plugin.git
       path: packages/flutter_ad_admob
       ref: main
 
-  # AppLovin MAX 适配器
+  # AppLovin MAX 适配器（自动包含 flutter_ad_core 与 applovin_max）
   flutter_ad_max:
     git:
       url: https://github.com/yanmingLiu/flutter_ad_plugin.git
@@ -229,6 +224,8 @@ dependencies:
   #     path: packages/flutter_ad_topon
   #     ref: main
 ```
+
+> **注意**：如果宿主工程确实需要显式声明 `flutter_ad_core`，请使用具体的 Git Commit Hash 作为 `ref`（例如 `ref: 0d12e2cacc...`），避免 Flutter pub 解析器对同一个仓库多包的 `ref: main` 产生版本歧义冲突。
 
 ### 完整引入（兼容旧版全量包）
 

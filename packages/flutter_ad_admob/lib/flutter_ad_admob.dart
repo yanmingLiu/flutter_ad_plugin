@@ -12,7 +12,8 @@ import 'package:google_mobile_ads/google_mobile_ads.dart';
 import 'package:flutter_ad_core/models.dart';
 import 'package:flutter_ad_core/platform.dart';
 
-/// Registers every AdMob adapter with the plugin in one step.
+export 'package:flutter_ad_core/flutter_ad_core.dart';
+
 ///
 /// ---
 /// 一步注册全部 AdMob 适配器。宿主只需在 `platforms` 中放入
