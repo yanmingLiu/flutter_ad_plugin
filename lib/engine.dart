@@ -1343,14 +1343,6 @@ class AdPresenter {
       eventName: eventName,
       extras: extras,
     );
-    for (final target in sequencePlacements.where((p) => !_cache.hasSlot(p))) {
-      unawaited(_loader.preloadPlacement(target, eventName: eventName));
-    }
-    if (!usedHighValueFirst &&
-        highValue != null &&
-        !_cache.hasSlot(highValue)) {
-      unawaited(_loader.preloadPlacement(highValue, eventName: eventName));
-    }
 
     final firstShown = await _showSlot(
       slot: firstSlot,
@@ -1362,9 +1354,13 @@ class AdPresenter {
       extras: extras,
       onAdShowed: onAdShowed,
       closePassThroughPercent: closePassThroughPercent,
+      autoPreloadOnClose: false,
     );
     if (!firstShown.shown) {
-      if (usedHighValueFirst) {
+      for (final target in sequencePlacements) {
+        unawaited(_loader.preloadPlacement(target, eventName: eventName));
+      }
+      if (highValue != null) {
         unawaited(_loader.preloadPlacement(highValue, eventName: eventName));
       }
       return AdSequenceShowResult(
@@ -1374,6 +1370,12 @@ class AdPresenter {
       );
     }
     if (startedWithoutCommonInventory) {
+      for (final target in sequencePlacements) {
+        unawaited(_loader.preloadPlacement(target, eventName: eventName));
+      }
+      if (highValue != null) {
+        unawaited(_loader.preloadPlacement(highValue, eventName: eventName));
+      }
       return AdSequenceShowResult(
         requestedPlacement: placement,
         results: [firstShown],
@@ -1384,6 +1386,12 @@ class AdPresenter {
         ? _cache.firstSlot(secondTarget)
         : _highValueOrPlacementSlot(adConfig, secondTarget);
     if (secondSlot == null) {
+      for (final target in sequencePlacements) {
+        unawaited(_loader.preloadPlacement(target, eventName: eventName));
+      }
+      if (highValue != null) {
+        unawaited(_loader.preloadPlacement(highValue, eventName: eventName));
+      }
       return AdSequenceShowResult(
         requestedPlacement: placement,
         results: [firstShown],
@@ -1396,13 +1404,6 @@ class AdPresenter {
       eventName: eventName,
       extras: extras,
     );
-    final usedHighValueSecond =
-        highValue != null && secondSlot.placement == highValue;
-    if (!usedHighValueSecond) {
-      unawaited(
-        _loader.preloadPlacement(secondSlot.placement, eventName: eventName),
-      );
-    }
     final secondShown = await _showSlot(
       slot: secondSlot,
       showPlacement: placement,
@@ -1413,10 +1414,17 @@ class AdPresenter {
       extras: extras,
       onAdShowed: onAdShowed,
       closePassThroughPercent: closePassThroughPercent,
+      autoPreloadOnClose: false,
     );
-    if (!secondShown.shown && usedHighValueSecond) {
+
+    // Sequence 全部展示/关闭结束后，统一发起补充预加载
+    for (final target in sequencePlacements) {
+      unawaited(_loader.preloadPlacement(target, eventName: eventName));
+    }
+    if (highValue != null) {
       unawaited(_loader.preloadPlacement(highValue, eventName: eventName));
     }
+
     return AdSequenceShowResult(
       requestedPlacement: placement,
       results: [firstShown, secondShown],
@@ -1553,6 +1561,7 @@ class AdPresenter {
     Map<String, dynamic>? extras,
     VoidCallback? onAdShowed,
     int? closePassThroughPercent,
+    bool autoPreloadOnClose = true,
   }) async {
     _cache.setAttribution(
       slot.ad,
@@ -1605,7 +1614,9 @@ class AdPresenter {
       onAdShowed: onAdShowed,
       onClosed: () {
         _cache.removeSlot(slot.placement, slot);
-        unawaited(_loader.preload(slot.placement, eventName: eventName));
+        if (autoPreloadOnClose) {
+          unawaited(_loader.preload(slot.placement, eventName: eventName));
+        }
       },
       closePassThroughPercent: closePassThroughPercent ?? 0,
       onCallback: callback,
