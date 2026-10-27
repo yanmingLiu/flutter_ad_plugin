@@ -19,9 +19,9 @@ export 'package:flutter_ad_core/flutter_ad_core.dart';
 /// 一步注册全部 AdMob 适配器。宿主只需在 `platforms` 中放入
 /// `AdmobPlatform()`，无需手工拼装 Adapter。
 class AdmobPlatform implements AdPlatform {
-  AdmobPlatform({AppLogger? logger}) : _logger = logger;
+  AdmobPlatform({AppLogger? logger}) : _logger = logger ?? log;
 
-  final AppLogger? _logger;
+  final AppLogger _logger;
 
   @override
   AdSource get source => AdSource.admob;
@@ -30,7 +30,7 @@ class AdmobPlatform implements AdPlatform {
   Future<void> init() async {
     final status = await MobileAds.instance.initialize();
     for (final entry in status.adapterStatuses.entries) {
-      _logger?.d(
+      _logger.d(
         '[admob] adapter=${entry.key} state=${entry.value.state.name} '
         'latency=${entry.value.latency}s description=${entry.value.description}',
       );
@@ -44,7 +44,7 @@ class AdmobPlatform implements AdPlatform {
   void openAdInspector() {
     MobileAds.instance.openAdInspector((error) {
       if (error != null) {
-        _logger?.e(
+        _logger.e(
           '[admob] inspector closed with error code=${error.code} '
           'domain=${error.domain} message=${error.message}',
         );
