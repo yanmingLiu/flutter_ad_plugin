@@ -27,7 +27,30 @@ class AdmobPlatform implements AdPlatform {
   AdSource get source => AdSource.admob;
 
   @override
-  Future<void> init() => MobileAds.instance.initialize();
+  Future<void> init() async {
+    final status = await MobileAds.instance.initialize();
+    for (final entry in status.adapterStatuses.entries) {
+      _logger?.d(
+        '[admob] adapter=${entry.key} state=${entry.value.state.name} '
+        'latency=${entry.value.latency}s description=${entry.value.description}',
+      );
+    }
+  }
+
+  /// Opens the Google Mobile Ads inspector for mediation diagnostics.
+  ///
+  /// This is intended for debug builds and requires a test device configured
+  /// with [testDeviceIds] before ads are requested.
+  void openAdInspector() {
+    MobileAds.instance.openAdInspector((error) {
+      if (error != null) {
+        _logger?.e(
+          '[admob] inspector closed with error code=${error.code} '
+          'domain=${error.domain} message=${error.message}',
+        );
+      }
+    });
+  }
 
   @override
   List<FullscreenAdAdapter> get fullscreenAdapters => [
