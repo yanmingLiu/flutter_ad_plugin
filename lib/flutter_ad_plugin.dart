@@ -400,11 +400,26 @@ class _MapConfigRepository implements AdConfigRepository {
   final Future<Map<String, dynamic>> Function()? _loader;
   AdConfig? _cached;
   Map<String, dynamic>? _override;
+  Future<AdConfig>? _loading;
 
   @override
-  Future<AdConfig> getConfig() async {
+  Future<AdConfig> getConfig() {
+    final cached = _cached;
+    if (cached != null) return Future<AdConfig>.value(cached);
+    final pending = _loading;
+    if (pending != null) return pending;
+    final future = _loadConfig();
+    _loading = future;
+    return future.whenComplete(() {
+      if (identical(_loading, future)) _loading = null;
+    });
+  }
+
+  Future<AdConfig> _loadConfig() async {
     final override = _override;
-    if (override != null) return _cached ??= AdConfigParser().parse(override);
+    if (override != null) {
+      return _cached ??= AdConfigParser().parse(override);
+    }
     final loaded = _loader == null ? _fallback : await _loader();
     final json = loaded.isEmpty ? _fallback : loaded;
     return _cached ??= AdConfigParser().parse(json);
