@@ -6,6 +6,12 @@ import 'models.dart';
 
 final log = AppLogger();
 
+abstract final class _LogColors {
+  static const green = '\x1B[32m';
+  static const red = '\x1B[31m';
+  static const reset = '\x1B[0m';
+}
+
 class AppLogger {
   AppLogger({this.verboseEnabled = true});
 
@@ -29,7 +35,13 @@ class AppLogger {
     final label = type == null ? 'EVENT' : _labelFor(type);
     final extra = _extraFields(event);
 
-    debugPrint('[ad] $label $placement $adType $adId $eventName$extra');
+    final line = '[ad] $label $placement $adType $adId $eventName$extra';
+    final color = type == AdEventType.loadFailed || type == AdEventType.showFail
+        ? _LogColors.red
+        : type == AdEventType.loadSucceeded || type == AdEventType.showSuccess
+        ? _LogColors.green
+        : null;
+    debugPrint(color == null ? line : _colorize(line, color));
   }
 
   void v(Object message) {
@@ -38,9 +50,18 @@ class AppLogger {
     }
   }
 
-  void e(Object message) {
-    debugPrint('[ad] $message');
+  void e(Object message, {Object? error, StackTrace? stackTrace}) {
+    debugPrint(_colorize('[ad] $message', _LogColors.red));
+    if (error != null) {
+      debugPrint(_colorize('[ad] error=$error', _LogColors.red));
+    }
+    if (stackTrace != null) {
+      debugPrint(stackTrace.toString());
+    }
   }
+
+  static String _colorize(Object message, String color) =>
+      '$color$message${_LogColors.reset}';
 }
 
 extension on AdEventType {
