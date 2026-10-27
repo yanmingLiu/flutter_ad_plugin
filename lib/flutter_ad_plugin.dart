@@ -69,12 +69,26 @@ class AdPlugin {
   late final AdDisplayGuard _guard;
   late final AdLoaderService _loader;
   late final AdPresenter _presenter;
+  late final _MapConfigRepository _configRepository;
 
   bool _initialized = false;
   bool _disposed = false;
   Future<void>? _initializing;
 
   bool get isInitialized => _initialized;
+
+  /// Updates the runtime ad configuration.
+  ///
+  /// The new configuration is validated immediately. Loaded ads are released
+  /// because their placement and policy may no longer match the configuration.
+  Future<void> updateConfig(Map<String, dynamic> config) async {
+    _assertInitialized();
+    await _configRepository.updateConfig(config);
+    if (_disposed) return;
+    for (final slot in _cache.drainAll()) {
+      _adapterRegistry.dispose(slot.source, slot.type, slot.ad);
+    }
+  }
 
   /// Initializes SDKs, loads config and prepares the ad engine.
   Future<void> init() async {
@@ -143,6 +157,7 @@ class AdPlugin {
       _guard = guard;
       _loader = loader;
       _presenter = presenter;
+      _configRepository = configRepository;
       _initialized = true;
     } finally {
       if (!_initialized) {
@@ -384,11 +399,22 @@ class _MapConfigRepository implements AdConfigRepository {
   final Map<String, dynamic> _fallback;
   final Future<Map<String, dynamic>> Function()? _loader;
   AdConfig? _cached;
+  Map<String, dynamic>? _override;
 
   @override
   Future<AdConfig> getConfig() async {
+    final override = _override;
+    if (override != null) return _cached ??= AdConfigParser().parse(override);
     final loaded = _loader == null ? _fallback : await _loader();
     final json = loaded.isEmpty ? _fallback : loaded;
     return _cached ??= AdConfigParser().parse(json);
+  }
+
+  Future<AdConfig> updateConfig(Map<String, dynamic> config) async {
+    final next = Map<String, dynamic>.unmodifiable(config);
+    final parsed = AdConfigParser().parse(next);
+    _override = next;
+    _cached = parsed;
+    return parsed;
   }
 }
