@@ -1,6 +1,6 @@
 name: flutter_ad_core
 description: "Core ad orchestration engine (caching, waterfall, guards, analytics) with zero ad SDK dependencies."
-version: 0.1.0
+version: 0.1.1
 publish_to: 'none'
 
 environment:

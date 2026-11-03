@@ -189,6 +189,7 @@ abstract class _AdmobFullscreenAdapter<TAd extends AdWithoutView>
           valueMicros,
           currencyCode,
           _networkName(fullscreenAd),
+          estimatedRevenue: 0,
         ),
       );
     };
@@ -520,7 +521,13 @@ class AdmobNativeAdapter implements InlineAdAdapter {
       },
       onPaidEvent: (ad, valueMicros, precision, currencyCode) {
         onCallback?.call(
-          AdPaidCallback(ad, valueMicros, currencyCode, _nativeNetworkName(ad)),
+          AdPaidCallback(
+            ad,
+            valueMicros,
+            currencyCode,
+            _nativeNetworkName(ad),
+            estimatedRevenue: 0,
+          ),
         );
       },
     );
@@ -694,6 +701,7 @@ class AdmobBannerAdapter implements InlineAdAdapter {
               valueMicros,
               currencyCode,
               ad.responseInfo?.loadedAdapterResponseInfo?.adSourceName,
+              estimatedRevenue: 0,
             ),
           );
         },

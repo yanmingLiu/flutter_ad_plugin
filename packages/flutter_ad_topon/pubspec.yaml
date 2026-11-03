@@ -1,6 +1,6 @@
 name: flutter_ad_topon
 description: "TopOn (secmtp_sdk) adapter for flutter_ad orchestration engine."
-version: 0.1.0
+version: 0.1.1
 publish_to: 'none'
 
 environment:

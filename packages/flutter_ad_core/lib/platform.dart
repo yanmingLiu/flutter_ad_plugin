@@ -102,6 +102,10 @@ String _extraFields(AdEvent event) {
     final currency = event.currency ?? '';
     buf.write(' revenue=$r $currency');
   }
+  final er = event.estimatedRevenue;
+  if (er != null) {
+    buf.write(' estRev=$er');
+  }
   final rewardAmount = event.rewardAmount;
   if (rewardAmount != null) {
     final label = event.rewardLabel;
@@ -276,12 +280,14 @@ class AdPaidCallback extends AdRawCallback {
   final double valueMicros;
   final String currencyCode;
   final String? network;
+  final double? estimatedRevenue;
   const AdPaidCallback(
     super.ad,
     this.valueMicros,
     this.currencyCode,
-    this.network,
-  );
+    this.network, {
+    this.estimatedRevenue,
+  });
 }
 
 class AdClickedCallback extends AdRawCallback {

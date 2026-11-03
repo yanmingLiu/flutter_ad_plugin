@@ -21,11 +21,16 @@ abstract class TopOnCallbackHandle {
 
   final String placementId;
   TopOnAdCallback? onCallback;
+  double? estimatedRevenue;
   bool disposed = false;
 
   void emitPaid(Map extraMap) {
     if (disposed) return;
-    final callback = topOnPaidCallback(this, extraMap);
+    final callback = topOnPaidCallback(
+      this,
+      extraMap,
+      estimatedRevenue: estimatedRevenue,
+    );
     if (callback != null) onCallback?.call(callback);
   }
 
@@ -169,6 +174,18 @@ class TopOnFullscreenHandle extends TopOnCallbackHandle {
     if (disposed || ready || failed) return;
     ready = true;
     lastResponse = response;
+    final extra = topOnExtraFor(response);
+    final value = _positiveNumber(extra, const [
+      'revenue',
+      'value',
+      'ecpm',
+      'amount',
+      'publisher_revenue',
+      'publisherRevenue',
+    ]);
+    if (value != null) {
+      estimatedRevenue = value * 1000000;
+    }
     onLoaded?.call(response);
   }
 
@@ -234,6 +251,18 @@ abstract class TopOnInlineHandle extends TopOnCallbackHandle {
     loaded = true;
     failed = false;
     lastResponse = response;
+    final extra = topOnExtraFor(response);
+    final value = _positiveNumber(extra, const [
+      'revenue',
+      'value',
+      'ecpm',
+      'amount',
+      'publisher_revenue',
+      'publisherRevenue',
+    ]);
+    if (value != null) {
+      estimatedRevenue = value * 1000000;
+    }
     onLoaded?.call(response);
   }
 
@@ -260,6 +289,18 @@ abstract class TopOnInlineHandle extends TopOnCallbackHandle {
     onLoadFailed = null;
     onDisplayed = null;
   }
+}
+
+Map topOnExtraFor(Object response) {
+  return switch (response) {
+    ATInterstitialResponse() => response.extraMap,
+    ATRewardResponse() => response.extraMap,
+    ATSplashResponse() => response.extraMap,
+    ATBannerResponse() => response.extraMap,
+    ATNativeResponse() => response.extraMap,
+    ATCommonAdResponse() => response.extraMap,
+    _ => const {},
+  };
 }
 
 /// Handle returned by a TopOn banner prepare call.
@@ -291,7 +332,11 @@ class TopOnNativeHandle extends TopOnInlineHandle {
 }
 
 /// Converts a TopOn revenue payload into an [AdPaidCallback].
-AdPaidCallback? topOnPaidCallback(Object ad, Map extraMap) {
+AdPaidCallback? topOnPaidCallback(
+  Object ad,
+  Map extraMap, {
+  double? estimatedRevenue,
+}) {
   final value = _positiveNumber(extraMap, const [
     'revenue',
     'value',
@@ -315,6 +360,7 @@ AdPaidCallback? topOnPaidCallback(Object ad, Map extraMap) {
     value * 1000000,
     currency.trim().isEmpty ? 'USD' : currency.trim(),
     topOnNetwork(extraMap),
+    estimatedRevenue: estimatedRevenue,
   );
 }
 
@@ -773,7 +819,7 @@ class TopOnEventHub {
   TopOnAdError _errorFor(Object response, String fallback) {
     return TopOnAdError(
       _messageFor(response) ?? fallback,
-      code: _errorCode(_extraFor(response)),
+      code: _errorCode(topOnExtraFor(response)),
     );
   }
 
@@ -788,18 +834,6 @@ class TopOnEventHub {
       _ => '',
     };
     return message.trim().isEmpty ? null : message.trim();
-  }
-
-  Map _extraFor(Object response) {
-    return switch (response) {
-      ATInterstitialResponse() => response.extraMap,
-      ATRewardResponse() => response.extraMap,
-      ATSplashResponse() => response.extraMap,
-      ATBannerResponse() => response.extraMap,
-      ATNativeResponse() => response.extraMap,
-      ATCommonAdResponse() => response.extraMap,
-      _ => const {},
-    };
   }
 
   int? _errorCode(Map extraMap) {

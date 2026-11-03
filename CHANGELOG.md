@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.1
+
+- feat: 在广告事件 `AdEvent` 中增加 `estimatedRevenue` 预估收益字段，并在 `income` 时输出。
+  - MAX: 在广告加载完成时获取预估收益（`revenue * 1000000`），在 `income` 收益事件触发时回调透出。
+  - TopOn: 在广告加载完成时从响应参数提取预估收益（`* 1000000`），在 `income` 收益事件触发时回调透出。
+  - AdMob: 维持在 `income` 阶段回调，SDK 未返回预估收益时默认返回 `0`。
+  - 同步更新主包及单组件拆分子包（`flutter_ad_core`、`flutter_ad_max`、`flutter_ad_admob`、`flutter_ad_topon`）。
+
 ## 0.1.0
 
 - Restructured repository to reusable Flutter package form.

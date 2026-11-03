@@ -245,6 +245,7 @@ class AdEventMapper {
         :final valueMicros,
         :final currencyCode,
         :final network,
+        :final estimatedRevenue,
       ):
         return AdEvent(
           eventType: AdEventType.income,
@@ -253,6 +254,7 @@ class AdEventMapper {
           source: source,
           adUnitId: adUnitId,
           revenue: valueMicros,
+          estimatedRevenue: estimatedRevenue,
           currency: currencyCode,
           timestamp: DateTime.now(),
           eventName: eventName,
@@ -1697,6 +1699,7 @@ class AdPresenter {
         source: event.source,
         adUnitId: event.adUnitId,
         revenue: event.revenue,
+        estimatedRevenue: event.estimatedRevenue,
         currency: event.currency,
         rewardAmount: event.rewardAmount,
         rewardLabel: event.rewardLabel,

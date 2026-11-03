@@ -104,6 +104,7 @@ class MaxFullscreenHandle {
   final String? placement;
   final String? customData;
 
+  double? estimatedRevenue;
   MaxAd? lastAd;
   MaxAdCallback? onCallback;
   void Function(MaxAd ad)? onLoaded;
@@ -120,6 +121,7 @@ class MaxFullscreenHandle {
     if (disposed || ready) return;
     loadFailed = false;
     lastAd = ad;
+    estimatedRevenue = ad.revenue * 1000000;
     ready = true;
     onLoaded?.call(ad);
   }
@@ -160,7 +162,13 @@ class MaxFullscreenHandle {
     if (disposed) return;
     lastAd = ad;
     onCallback?.call(
-      AdPaidCallback(this, ad.revenue * 1000000, 'USD', ad.networkName),
+      AdPaidCallback(
+        this,
+        ad.revenue * 1000000,
+        'USD',
+        ad.networkName,
+        estimatedRevenue: estimatedRevenue,
+      ),
     );
   }
 
@@ -213,6 +221,7 @@ class MaxBannerHandle {
   final double? height;
 
   AdViewId? adViewId;
+  double? estimatedRevenue;
   MaxAd? lastAd;
   MaxAdCallback? onCallback;
   void Function(MaxAd ad)? onLoaded;
@@ -226,6 +235,7 @@ class MaxBannerHandle {
     loaded = true;
     failed = false;
     lastAd = ad;
+    estimatedRevenue = ad.revenue * 1000000;
     onLoaded?.call(ad);
   }
 
@@ -239,7 +249,13 @@ class MaxBannerHandle {
     if (disposed) return;
     lastAd = ad;
     onCallback?.call(
-      AdPaidCallback(this, ad.revenue * 1000000, 'USD', ad.networkName),
+      AdPaidCallback(
+        this,
+        ad.revenue * 1000000,
+        'USD',
+        ad.networkName,
+        estimatedRevenue: estimatedRevenue,
+      ),
     );
   }
 
@@ -293,6 +309,7 @@ class MaxNativeHandle {
   MaxAdCallback? onCallback;
   void Function(MaxAd ad)? onLoaded;
   void Function(MaxError error)? onLoadFailed;
+  double? estimatedRevenue;
   MaxAd? lastAd;
   bool loaded = false;
   bool failed = false;
@@ -303,6 +320,7 @@ class MaxNativeHandle {
     failed = false;
     loaded = true;
     lastAd = ad;
+    estimatedRevenue = ad.revenue * 1000000;
     onLoaded?.call(ad);
   }
 
@@ -317,7 +335,13 @@ class MaxNativeHandle {
     if (disposed) return;
     lastAd = ad;
     onCallback?.call(
-      AdPaidCallback(this, ad.revenue * 1000000, 'USD', ad.networkName),
+      AdPaidCallback(
+        this,
+        ad.revenue * 1000000,
+        'USD',
+        ad.networkName,
+        estimatedRevenue: estimatedRevenue,
+      ),
     );
   }
 

@@ -623,6 +623,7 @@ class AdEvent {
   final AdSource? source;
   final String? adUnitId;
   final double? revenue; // valueMicros from AdMob onPaidEvent
+  final double? estimatedRevenue;
   final String? currency;
   final int? rewardAmount;
   final String? rewardLabel;
@@ -646,6 +647,7 @@ class AdEvent {
     this.source,
     this.adUnitId,
     this.revenue,
+    this.estimatedRevenue,
     this.currency,
     this.rewardAmount,
     this.rewardLabel,
@@ -671,6 +673,7 @@ class AdEvent {
       'ad_source': source?.name,
       'ad_unit_id': adUnitId,
       'revenue': revenue,
+      'estimated_revenue': estimatedRevenue,
       'currency': currency,
       'reward_amount': rewardAmount,
       'reward_label': rewardLabel,
