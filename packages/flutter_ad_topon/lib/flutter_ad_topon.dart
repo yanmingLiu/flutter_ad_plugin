@@ -366,18 +366,27 @@ AdPaidCallback? topOnPaidCallback(
   );
 }
 
-/// Extracts the mediated network name from a TopOn callback payload.
+/// Reads TopOn's network name, falling back to its network firm ID.
+/// Returns null when neither field is available.
 String? topOnNetwork(Map extraMap) {
-  return _firstString(extraMap, const [
-    'network',
-    'networkName',
-    'network_name',
-    'adNetwork',
-    'ad_network',
-    'adsourceId',
-    'adSourceId',
-    'ad_source_id',
-  ]);
+  final name = extraMap['network_name']?.toString().trim();
+  if (name != null && name.isNotEmpty) return name;
+
+  final rawId = extraMap['network_firm_id']?.toString().trim();
+  if (rawId == null || rawId.isEmpty) return null;
+  final firmId = int.tryParse(rawId);
+  return switch (firmId) {
+    1 => 'Meta',
+    2 => 'AdMob',
+    5 => 'AppLovin',
+    6 => 'Mintegral',
+    8 => 'GDT',
+    15 => 'CSJ',
+    50 => 'Pangle',
+    59 => 'Bigo',
+    66 => 'TopOn ADX',
+    _ => 'Unknown($rawId)',
+  };
 }
 
 /// Reads a non-empty string option.
@@ -914,6 +923,9 @@ class TopOnFullscreenAdapter
       typeName: type.name,
       logger: _logger,
       cancellationToken: cancellationToken,
+      networkOf: (ad) => ad.lastResponse == null
+          ? null
+          : topOnNetwork(topOnExtraFor(ad.lastResponse!)),
       onLateAdLoaded: (lateHandle) {
         if (onLateAdLoaded != null) {
           onLateAdLoaded(lateHandle, type, unit.id);
@@ -1123,6 +1135,9 @@ abstract class _TopOnInlineAdapter<T extends TopOnInlineHandle>
       typeName: type.name,
       logger: _logger,
       cancellationToken: cancellationToken,
+      networkOf: (ad) => ad.lastResponse == null
+          ? null
+          : topOnNetwork(topOnExtraFor(ad.lastResponse!)),
       onLateAdLoaded: (lateHandle) {
         if (onLateAdLoaded != null) {
           onLateAdLoaded(lateHandle, type, unit.id);

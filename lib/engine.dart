@@ -900,6 +900,7 @@ class AdLoaderService {
           unit.source,
           unit.id,
           eventName: eventName,
+          network: result.network,
         );
 
         if (existingSlots.length + loadedSlots.length >= targetCount) {
@@ -1042,6 +1043,7 @@ class AdLoaderService {
     AdSource? s,
     String? id, {
     String? errorReason,
+    String? network,
     required String eventName,
   }) {
     final event = AdEvent(
@@ -1051,6 +1053,7 @@ class AdLoaderService {
       source: s,
       adUnitId: id,
       errorReason: errorReason,
+      network: network,
       timestamp: DateTime.now(),
       eventName: eventName,
     );

@@ -151,6 +151,7 @@ abstract class _AdmobFullscreenAdapter<TAd extends AdWithoutView>
       typeName: type.name,
       cancellationToken: cancellationToken,
       logger: _logger,
+      networkOf: _networkName,
       onLateAdLoaded: (ad) {
         if (onLateAdLoaded != null) {
           onLateAdLoaded(ad, type, unit.id);
@@ -490,7 +491,12 @@ class AdmobNativeAdapter implements InlineAdAdapter {
         if (adDisposed) return;
         if (!completer.isCompleted) {
           completer.complete(
-            AdLoadResult.success(ad: nativeAd, type: type, adUnitId: unit.id),
+            AdLoadResult.success(
+              ad: nativeAd,
+              type: type,
+              adUnitId: unit.id,
+              network: _nativeNetworkName(nativeAd),
+            ),
           );
           return;
         }
@@ -655,7 +661,15 @@ class AdmobBannerAdapter implements InlineAdAdapter {
           if (adDisposed) return;
           if (!completer.isCompleted) {
             completer.complete(
-              AdLoadResult.success(ad: bannerAd, type: type, adUnitId: unit.id),
+              AdLoadResult.success(
+                ad: bannerAd,
+                type: type,
+                adUnitId: unit.id,
+                network: bannerAd
+                    .responseInfo
+                    ?.loadedAdapterResponseInfo
+                    ?.adSourceName,
+              ),
             );
             return;
           }

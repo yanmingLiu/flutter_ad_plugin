@@ -33,8 +33,8 @@ dependencies:
     sdk: flutter
     
   applovin_max: ^4.6.4
-  google_mobile_ads: 9.2.0
-  secmtp_sdk: ^1.0.16
+  google_mobile_ads: ^9.2.0
+  secmtp_sdk: ^1.0.18
   
 
 dev_dependencies:

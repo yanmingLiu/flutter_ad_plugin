@@ -442,17 +442,23 @@ class AdLoadResult<TAd extends Object> {
   final String adUnitId;
   final Object? error;
 
+  /// Actual filling network reported by the SDK when loading completes.
+  /// Null when no ad filled or an inline handle is only prepared, not loaded.
+  final String? network;
+
   const AdLoadResult.success({
     required this.ad,
     required this.type,
     required this.adUnitId,
+    this.network,
   }) : error = null;
 
   const AdLoadResult.failure({
     required this.type,
     required this.adUnitId,
     required this.error,
-  }) : ad = null;
+  }) : ad = null,
+       network = null;
 
   bool get isSuccess => ad != null;
 }

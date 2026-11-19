@@ -23,19 +23,11 @@ class AppLogger {
 
   void event(AdEvent event) {
     final type = event.eventType;
-    final placement = (event.placement?.name ?? '-').padRight(14);
-    final adType = (event.adType?.name ?? '-').padRight(13);
-    final adId = _formatAdUnitId(event.adUnitId).padRight(12);
-    final eventName = (event.eventName ?? '-').padRight(14);
-
     if (!verboseEnabled && !(type?._printsByDefault ?? false)) {
       return;
     }
 
-    final label = type == null ? 'EVENT' : _labelFor(type);
-    final extra = _extraFields(event);
-
-    final line = '[ad] $label $placement $adType $adId $eventName$extra';
+    final line = '[ad] ${event.toJson()}';
     final color = type == AdEventType.loadFailed || type == AdEventType.showFail
         ? _LogColors.red
         : type == AdEventType.loadSucceeded || type == AdEventType.showSuccess
@@ -68,79 +60,6 @@ extension on AdEventType {
   bool get _printsByDefault {
     return this == AdEventType.loadFailed || this == AdEventType.showFail;
   }
-}
-
-String _labelFor(AdEventType type) {
-  switch (type) {
-    case AdEventType.loadRequested:
-      return 'REQ  ';
-    case AdEventType.loadSucceeded:
-      return 'OK   ';
-    case AdEventType.loadFailed:
-      return 'ERR  ';
-    case AdEventType.show:
-      return 'SHOW ';
-    case AdEventType.showSuccess:
-      return 'DONE ';
-    case AdEventType.showFail:
-      return 'FAIL ';
-    case AdEventType.clicked:
-      return 'CLICK';
-    case AdEventType.income:
-      return 'PAID ';
-    case AdEventType.close:
-      return 'CLOSE';
-    case AdEventType.reward:
-      return 'REWARD';
-  }
-}
-
-String _extraFields(AdEvent event) {
-  final buf = StringBuffer();
-  final r = event.revenue;
-  if (r != null) {
-    final currency = event.currency ?? '';
-    buf.write(' revenue=$r $currency');
-  }
-  final er = event.estimatedRevenue;
-  if (er != null) {
-    buf.write(' estRev=$er');
-  }
-  final rewardAmount = event.rewardAmount;
-  if (rewardAmount != null) {
-    final label = event.rewardLabel;
-    buf.write(' reward=$rewardAmount');
-    if (label != null && label.isNotEmpty) {
-      buf.write(' ($label)');
-    }
-  }
-  final err = event.errorReason;
-  if (err != null && err.isNotEmpty) {
-    buf.write(' error=$err');
-  }
-  final net = event.network;
-  if (net != null && net.isNotEmpty) {
-    buf.write(' network=$net');
-  }
-  final requested = event.requestedPlacement;
-  if (requested != null && requested != event.placement) {
-    buf.write(' request=${requested.name}');
-  }
-  return buf.toString();
-}
-
-String _formatAdUnitId(String? adUnitId) {
-  if (adUnitId == null || adUnitId.isEmpty) {
-    return '-';
-  }
-  final idx = adUnitId.lastIndexOf('/');
-  if (idx >= 0 && idx < adUnitId.length - 1) {
-    return '...${adUnitId.substring(idx + 1)}';
-  }
-  if (adUnitId.length > 12) {
-    return '...${adUnitId.substring(adUnitId.length - 8)}';
-  }
-  return adUnitId;
 }
 
 /// A lightweight cancellation token for aborting in-flight ad loads.
@@ -364,6 +283,7 @@ mixin CommonLoaderMixin<TAd extends Object> {
     startLoad,
     CancellationToken? cancellationToken,
     void Function(TAd ad)? onLateAdLoaded,
+    String? Function(TAd ad)? networkOf,
   }) async {
     final effectiveLogger = logger ?? log;
     final completer = Completer<AdLoadResult<Object>>();
@@ -423,6 +343,7 @@ mixin CommonLoaderMixin<TAd extends Object> {
             completer.complete(
               AdLoadResult.success(
                 ad: ad,
+                network: networkOf?.call(ad),
                 type: AdType(unit.type.name),
                 adUnitId: unit.id,
               ),

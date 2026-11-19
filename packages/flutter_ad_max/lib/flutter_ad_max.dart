@@ -747,6 +747,14 @@ class MaxBannerAdapter
         _eventHub.registry.unregisterBanner(handle);
         handle.dispose();
       }
+      if (value.isSuccess) {
+        return AdLoadResult<Object>.success(
+          ad: value.ad,
+          type: value.type,
+          adUnitId: value.adUnitId,
+          network: handle.lastAd?.networkName,
+        );
+      }
       return value;
     });
   }
@@ -839,6 +847,14 @@ class MaxFullscreenAdapter
       if (!value.isSuccess && value.error is! TimeoutException) {
         _eventHub.registry.unregisterFullscreen(handle);
         handle.dispose();
+      }
+      if (value.isSuccess) {
+        return AdLoadResult<Object>.success(
+          ad: value.ad,
+          type: value.type,
+          adUnitId: value.adUnitId,
+          network: handle.lastAd?.networkName,
+        );
       }
       return value;
     });
