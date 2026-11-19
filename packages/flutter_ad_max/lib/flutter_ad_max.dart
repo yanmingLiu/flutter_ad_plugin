@@ -1110,7 +1110,10 @@ class MaxPlatform implements AdPlatform {
     if (testDeviceIds.isNotEmpty) {
       AppLovinMAX.setTestDeviceAdvertisingIds(testDeviceIds);
     }
-    await AppLovinMAX.initialize(sdkKey);
+    final configuration = await AppLovinMAX.initialize(sdkKey);
+    if (configuration == null) {
+      throw StateError('MAX initialization returned no configuration');
+    }
     _eventHub.install();
   }
 

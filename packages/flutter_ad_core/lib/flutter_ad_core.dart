@@ -7,6 +7,9 @@ library;
 export 'ad_plugin.dart' show AdPlugin;
 export 'models.dart'
     show
+        AdSource,
+        AdInitializationState,
+        AdInitializationStatus,
         AdEvent,
         AdEventType,
         AdNotReadyEvent,

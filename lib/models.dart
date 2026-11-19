@@ -54,6 +54,24 @@ class AdType {
   String toString() => name;
 }
 
+/// Initialization lifecycle for one registered ad platform.
+enum AdInitializationState { notStarted, initializing, succeeded, failed }
+
+/// Snapshot of a platform initialization attempt, independent of ad fill.
+class AdInitializationStatus {
+  const AdInitializationStatus({required this.state, this.error});
+
+  final AdInitializationState state;
+  final Object? error;
+
+  bool get isSuccess => state == AdInitializationState.succeeded;
+
+  Map<String, Object?> toJson() => {
+    'state': state.name,
+    if (error != null) 'error': error.toString(),
+  };
+}
+
 /// 广告来源（使用类包装 String 以支持动态扩展）
 class AdSource {
   final String name;

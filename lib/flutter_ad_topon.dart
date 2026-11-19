@@ -1283,7 +1283,15 @@ class TopOnPlatform implements AdPlatform {
   Future<void> init() async {
     _eventHub.install();
     await ATInitManger.setLogEnabled(logEnabled: logEnabled);
-    await ATInitManger.initSDK(appidStr: appId, appidkeyStr: appKey);
+    final result = await ATInitManger.initSDK(
+      appidStr: appId,
+      appidkeyStr: appKey,
+    );
+    // Android acknowledges the init call with an empty string; iOS returns
+    // 'succeed' or an error description through the same success channel.
+    if (result.isNotEmpty && result != 'succeed') {
+      throw StateError('TopOn initialization failed: $result');
+    }
   }
 
   @override

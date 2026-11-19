@@ -6,6 +6,9 @@ import 'platform.dart';
 
 export 'models.dart'
     show
+        AdSource,
+        AdInitializationState,
+        AdInitializationStatus,
         AdEvent,
         AdEventType,
         AdNotReadyEvent,
@@ -56,6 +59,26 @@ class AdPlugin {
   Future<void>? _initializing;
 
   bool get isInitialized => _initialized;
+
+  final Map<AdSource, AdInitializationStatus> _initializationStatuses = {};
+
+  /// Returns null for an unregistered source (including null).
+  /// Success records completion of the platform initialization contract;
+  /// it does not guarantee ad fill or every mediated adapter being ready.
+  AdInitializationStatus? initializationStatus(AdSource? source) {
+    if (!_options.platforms.any((platform) => platform.source == source)) {
+      return null;
+    }
+    return _initializationStatuses[source] ??
+        const AdInitializationStatus(state: AdInitializationState.notStarted);
+  }
+
+  /// Immutable snapshot, suitable for reporting from an ad event callback.
+  Map<AdSource, AdInitializationStatus> get initializationStatuses =>
+      Map.unmodifiable({
+        for (final platform in _options.platforms)
+          platform.source: initializationStatus(platform.source)!,
+      });
 
   /// Updates the runtime ad configuration.
   ///
@@ -127,7 +150,22 @@ class AdPlugin {
 
     try {
       for (final platform in _options.platforms) {
-        await platform.init();
+        _initializationStatuses[platform.source] = const AdInitializationStatus(
+          state: AdInitializationState.initializing,
+        );
+        try {
+          await platform.init();
+          _initializationStatuses[platform.source] =
+              const AdInitializationStatus(
+                state: AdInitializationState.succeeded,
+              );
+        } catch (error) {
+          _initializationStatuses[platform.source] = AdInitializationStatus(
+            state: AdInitializationState.failed,
+            error: error,
+          );
+          rethrow;
+        }
       }
       await configRepository.getConfig();
       if (_disposed) return;

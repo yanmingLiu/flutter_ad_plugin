@@ -926,3 +926,36 @@ flutter build ios --debug --simulator --no-codesign
 ```
 
 当前 Example iOS 工程如同时保留 CocoaPods 痕迹和 Swift Package，Flutter 会输出迁移提示，但不影响当前 SPM 构建。完全迁移前需要在 `example/ios` 执行 `pod deintegrate`，并移除 xcconfig 中的 Pods include；执行前应确认没有其他 Pod 依赖和自定义 Podfile 逻辑。
+
+### 查询平台初始化状态
+
+在加载成功回调中同步查询本次广告所属平台，或读取全部已注册平台的状态快照：
+
+```dart
+late final AdPlugin ads;
+ads = AdPlugin(
+  config: adConfigJson,
+  platforms: [AdmobPlatform()],
+  onEvent: (event) {
+    if (event.eventType == AdEventType.loadSucceeded) {
+      final status = ads.initializationStatus(event.source);
+      final allStatuses = {
+        for (final entry in ads.initializationStatuses.entries)
+          entry.key.name: entry.value.toJson(),
+      };
+      // 将 status?.toJson() 或 allStatuses 加入业务上报参数。
+    }
+  },
+);
+await ads.init();
+```
+
+状态为 `notStarted`、`initializing`、`succeeded`、`failed`；失败记录包含
+`error`。未注册的平台（或 null 来源）查询返回 null。快照不可修改，不随后续
+初始化进度变化；dispose 后保留最后一次初始化结果供诊断，不代表当前可展示。
+
+`succeeded` 表示平台初始化接口完成，并通过可获得的返回值检查：AdMob 的
+initialize 完成不代表每个聚合 adapter 都 ready；MAX 必须返回配置；TopOn iOS
+必须返回 succeed，Android 桥接层仅确认初始化调用完成。该状态不保证广告填充。
+初始化维持顺序执行和失败即抛出的行为，失败后未执行的平台仍为 notStarted；
+再次调用 init 可重试。配置读取失败不改变已经完成的 SDK 初始化结果。
