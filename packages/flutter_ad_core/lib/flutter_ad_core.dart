@@ -5,6 +5,15 @@
 library;
 
 export 'ad_plugin.dart' show AdPlugin;
+export 'engine.dart'
+    show
+        AdCacheService,
+        AdEventMapper,
+        AdDisplayGuard,
+        AdGuardResult,
+        AdGuardBlockReason,
+        AdLoaderService,
+        AdPresenter;
 export 'models.dart'
     show
         AdSource,
@@ -13,10 +22,20 @@ export 'models.dart'
         AdInitializationStatus,
         AdEvent,
         AdEventType,
+        AdEventReporter,
         AdNotReadyEvent,
         AdShowResult,
         AdSequenceShowResult,
-        PlacementType;
+        PlacementType,
+        AdConfig,
+        AdConfigParser,
+        AdConfigRepository,
+        AdUnitConfig,
+        PlacementPolicy,
+        AdSlotState,
+        AdSlotLoaded,
+        AdSlotFailed,
+        AdAttribution;
 export 'platform.dart'
     show
         AdPlatform,

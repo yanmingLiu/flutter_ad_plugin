@@ -1,4 +1,3 @@
-import 'package:flutter_ad_core/models.dart' show AdUnitConfig;
 import 'package:flutter_ad_max/flutter_ad_max.dart';
 import 'package:flutter_test/flutter_test.dart';
 

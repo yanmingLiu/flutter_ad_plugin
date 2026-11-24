@@ -1,5 +1,4 @@
 import 'package:flutter/services.dart';
-import 'package:flutter_ad_core/models.dart' show AdUnitConfig;
 import 'package:flutter_ad_topon/flutter_ad_topon.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:secmtp_sdk/at_index.dart';

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.1 - 2026-11-24
+
+- Core: 扩充公开入口导出清单（补充导出 `AdConfigParser`、`AdConfig`、`AdLoaderService`、`AdPresenter`、`AdCacheService`、`AdDisplayGuard` 等全部引擎与数据模型类型）。
+- MAX / AdMob / TopOn: 级联导出全套 Core API，宿主项目无需显式声明 Core 即可直接构建追加瀑布流与高级调度服务，彻底消除 Git 传递依赖的解析冲突。
+- 测试: 清理各子包测试用例中冗余的 `models.dart` 导入。
+
 ## 0.2.0 - 2026-11-24
 
 - Breaking: 仅支持 `packages/` 下的分包接入。迁移方式见 README。
