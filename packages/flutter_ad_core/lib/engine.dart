@@ -772,8 +772,30 @@ class AdLoaderService {
       return false;
     }
 
+    final requiredDoubleNativeCount = requireCompleteDoubleNative
+        ? config
+              .getUnits(placement)
+              .where(
+                (unit) =>
+                    unit.isValid &&
+                    unit.type.isDoubleNative &&
+                    config.getPolicy(placement).supports(unit.type),
+              )
+              .fold<int>(
+                0,
+                (count, unit) => unit.poolSize > count ? unit.poolSize : count,
+              )
+        : 0;
+    final atomicNativeLoad = requiredDoubleNativeCount > 0;
+    final commitTarget = targetCount < requiredDoubleNativeCount
+        ? requiredDoubleNativeCount
+        : targetCount;
+
     _cache.beginLoading(placement, cacheId: cacheId);
     final existingSlots = _cache.getSlots(placement, cacheId: cacheId);
+    List<AdSlotLoaded> availableSlots() => atomicNativeLoad
+        ? _cache.getSlots(placement, cacheId: cacheId)
+        : existingSlots;
     final loadedSlots = <AdSlotLoaded>[];
     Object? lastError;
 
@@ -821,6 +843,10 @@ class AdLoaderService {
             cancellationToken: ct,
             onCallback: _wrapCallback(placement, unit, eventName),
             onLateAdLoaded: (ad, type, adUnitId) {
+              if (atomicNativeLoad) {
+                _adapterRegistry.dispose(unit.source, type, ad);
+                return;
+              }
               _handleLateAd(
                 placement,
                 ad,
@@ -889,7 +915,9 @@ class AdLoaderService {
           loadedAt: DateTime.now(),
         );
         loadedSlots.add(slot);
-        _cache.addSlot(placement, slot, cacheId: cacheId);
+        if (!atomicNativeLoad) {
+          _cache.addSlot(placement, slot, cacheId: cacheId);
+        }
         _cache.setAttribution(slot.ad, placement, eventName: eventName);
         onUnitLoaded?.call(unit);
 
@@ -903,9 +931,9 @@ class AdLoaderService {
           network: result.network,
         );
 
-        if (existingSlots.length + loadedSlots.length >= targetCount) {
+        if (availableSlots().length + loadedSlots.length >= commitTarget) {
           _cache.commitSlots(placement, [
-            ...existingSlots,
+            ...availableSlots(),
             ...loadedSlots,
           ], cacheId: cacheId);
           return true;
@@ -925,31 +953,28 @@ class AdLoaderService {
       );
     }
 
-    final requiredDoubleNativeCount = units
-        .where((unit) => unit.type.isDoubleNative)
-        .fold<int>(
-          0,
-          (count, unit) => unit.poolSize > count ? unit.poolSize : count,
-        );
-    if (requireCompleteDoubleNative &&
-        requiredDoubleNativeCount > 0 &&
-        existingSlots.length + loadedSlots.length < requiredDoubleNativeCount) {
+    if (atomicNativeLoad &&
+        (ct.isCancelled ||
+            availableSlots().length + loadedSlots.length <
+                requiredDoubleNativeCount)) {
       for (final slot in loadedSlots) {
         _adapterRegistry.dispose(slot.source, slot.type, slot.ad);
         _cache.removeAttribution(slot.ad);
       }
-      _cache.commitSlots(
-        placement,
-        existingSlots,
-        lastError: lastError ?? 'double_native_incomplete',
-        cacheId: cacheId,
-      );
+      if (!ct.isCancelled) {
+        _cache.commitSlots(
+          placement,
+          _cache.getSlots(placement, cacheId: cacheId),
+          lastError: lastError ?? 'double_native_incomplete',
+          cacheId: cacheId,
+        );
+      }
       return false;
     }
 
     _cache.commitSlots(
       placement,
-      [...existingSlots, ...loadedSlots],
+      [...availableSlots(), ...loadedSlots],
       lastError: lastError,
       cacheId: cacheId,
     );

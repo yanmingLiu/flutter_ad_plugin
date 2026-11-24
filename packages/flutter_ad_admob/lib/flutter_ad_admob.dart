@@ -124,13 +124,10 @@ abstract class _AdmobFullscreenAdapter<TAd extends AdWithoutView>
     FullScreenContentCallback<TAd> callback,
   );
 
-  Future<void> _showSdkAd(TAd ad);
-
-  void Function(int amount, String? label)? _rewardCallback;
-
-  void _emitRewarded(int amount, String? label) {
-    _rewardCallback?.call(amount, label);
-  }
+  Future<void> _showSdkAd(
+    TAd ad,
+    void Function(int amount, String? label) onRewarded,
+  );
 
   @override
   Future<AdLoadResult<Object>> load({
@@ -232,19 +229,17 @@ abstract class _AdmobFullscreenAdapter<TAd extends AdWithoutView>
       ),
     );
 
-    _rewardCallback = (amount, label) {
-      onCallback?.call(
-        AdRewardedCallback(
-          fullscreenAd,
-          amount,
-          label,
-          _networkName(fullscreenAd),
-        ),
-      );
-    };
-
     try {
-      await _showSdkAd(fullscreenAd);
+      await _showSdkAd(fullscreenAd, (amount, label) {
+        onCallback?.call(
+          AdRewardedCallback(
+            fullscreenAd,
+            amount,
+            label,
+            _networkName(fullscreenAd),
+          ),
+        );
+      });
     } catch (e) {
       fullscreenAd.dispose();
       if (!completer.isCompleted) {
@@ -255,8 +250,6 @@ abstract class _AdmobFullscreenAdapter<TAd extends AdWithoutView>
       onCallback?.call(
         AdShowFailedCallback(fullscreenAd, null, e.toString(), null),
       );
-    } finally {
-      _rewardCallback = null;
     }
 
     return completer.future;
@@ -299,7 +292,10 @@ class AdmobOpenAdapter extends _AdmobFullscreenAdapter<AppOpenAd> {
   ) => ad.fullScreenContentCallback = callback;
 
   @override
-  Future<void> _showSdkAd(AppOpenAd ad) => ad.show();
+  Future<void> _showSdkAd(
+    AppOpenAd ad,
+    void Function(int, String?) onRewarded,
+  ) => ad.show();
 }
 
 /// AdMob 插屏广告适配器。
@@ -335,7 +331,10 @@ class AdmobInterstitialAdapter extends _AdmobFullscreenAdapter<InterstitialAd> {
   ) => ad.fullScreenContentCallback = callback;
 
   @override
-  Future<void> _showSdkAd(InterstitialAd ad) => ad.show();
+  Future<void> _showSdkAd(
+    InterstitialAd ad,
+    void Function(int, String?) onRewarded,
+  ) => ad.show();
 }
 
 /// AdMob 激励广告适配器。
@@ -371,10 +370,13 @@ class AdmobRewardedAdapter extends _AdmobFullscreenAdapter<RewardedAd> {
   ) => ad.fullScreenContentCallback = callback;
 
   @override
-  Future<void> _showSdkAd(RewardedAd ad) {
+  Future<void> _showSdkAd(
+    RewardedAd ad,
+    void Function(int, String?) onRewarded,
+  ) {
     return ad.show(
       onUserEarnedReward: (ad, item) {
-        _emitRewarded(item.amount.toInt(), item.type);
+        onRewarded(item.amount.toInt(), item.type);
       },
     );
   }
@@ -414,10 +416,13 @@ class AdmobRewardedInterstitialAdapter
   ) => ad.fullScreenContentCallback = callback;
 
   @override
-  Future<void> _showSdkAd(RewardedInterstitialAd ad) {
+  Future<void> _showSdkAd(
+    RewardedInterstitialAd ad,
+    void Function(int, String?) onRewarded,
+  ) {
     return ad.show(
       onUserEarnedReward: (ad, item) {
-        _emitRewarded(item.amount.toInt(), item.type);
+        onRewarded(item.amount.toInt(), item.type);
       },
     );
   }

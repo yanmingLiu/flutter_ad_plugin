@@ -1,7 +1,10 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:flutter_ad_plugin/flutter_ad_plugin.dart';
+import 'package:flutter_ad_admob/flutter_ad_admob.dart' show AdmobPlatform;
+import 'package:flutter_ad_core/flutter_ad_core.dart';
+import 'package:flutter_ad_max/flutter_ad_max.dart' show MaxPlatform;
+import 'package:flutter_ad_topon/flutter_ad_topon.dart' show TopOnPlatform;
 
 import 'demo_components.dart';
 import 'integration_templates.dart';

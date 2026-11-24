@@ -549,17 +549,13 @@ class MaxRequestRegistry {
   final Map<String, MaxBannerHandle> _bannersByKey = {};
   bool _disposed = false;
 
-  void registerFullscreen(MaxFullscreenHandle handle) {
-    if (_disposed) return;
-    // A newer request for the same ad unit is the only request MAX can report
-    // reliably. Keep the old handle alive for a pending show, but route future
-    // load callbacks to the newest request.
-    _fullscreen[_fullscreenKey(handle.type, handle.adUnitId)] = handle;
-  }
-
-  void activateFullscreen(MaxFullscreenHandle handle) {
-    if (_disposed) return;
-    _fullscreen[_fullscreenKey(handle.type, handle.adUnitId)] = handle;
+  bool registerFullscreen(MaxFullscreenHandle handle) {
+    if (_disposed) return false;
+    final key = _fullscreenKey(handle.type, handle.adUnitId);
+    final owner = _fullscreen[key];
+    if (owner != null && !identical(owner, handle)) return false;
+    _fullscreen[key] = handle;
+    return true;
   }
 
   MaxFullscreenHandle? fullscreenFor(AdType type, String adUnitId) {
@@ -809,7 +805,16 @@ class MaxFullscreenAdapter
       customData: options.customData,
     );
     handle.onCallback = onCallback;
-    _eventHub.registry.registerFullscreen(handle);
+    if (!_eventHub.registry.registerFullscreen(handle)) {
+      handle.dispose();
+      return Future.value(
+        AdLoadResult.failure(
+          type: type,
+          adUnitId: unit.id,
+          error: StateError('MAX fullscreen unit is already owned: ${unit.id}'),
+        ),
+      );
+    }
 
     final result = loadWithCompleter(
       unit: unit,
@@ -834,6 +839,7 @@ class MaxFullscreenAdapter
         handle.onLoadFailed = (error) {
           _eventHub.registry.unregisterFullscreen(handle);
           onFailed(error);
+          handle.dispose();
         };
 
         _startSdkLoad(unit.id);
@@ -879,6 +885,14 @@ class MaxFullscreenAdapter
     }
 
     final handle = ad;
+    if (!_eventHub.registry.registerFullscreen(handle)) {
+      return AdShowResult.failure(
+        error: StateError(
+          'MAX fullscreen unit is already owned: ${handle.adUnitId}',
+        ),
+        errorReason: 'max_fullscreen_unit_busy',
+      );
+    }
     final completer = Completer<AdShowResult>();
     var completed = false;
 
@@ -904,7 +918,6 @@ class MaxFullscreenAdapter
       );
     }
 
-    _eventHub.registry.activateFullscreen(handle);
     handle.onCallback = onCallback;
     handle.onDisplayed = (maxAd) {
       onAdShowed?.call();

@@ -1,5 +1,5 @@
 name: flutter_ad_plugin_example
-description: "Example app for flutter_ad_plugin"
+description: "Example app for the modular Flutter ad packages"
 publish_to: "none"
 version: 1.0.0+1
 
@@ -9,8 +9,14 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  flutter_ad_plugin:
-    path: ../
+  flutter_ad_core:
+    path: ../packages/flutter_ad_core
+  flutter_ad_admob:
+    path: ../packages/flutter_ad_admob
+  flutter_ad_max:
+    path: ../packages/flutter_ad_max
+  flutter_ad_topon:
+    path: ../packages/flutter_ad_topon
   google_mobile_ads: ^9.2.0
 
 dev_dependencies:

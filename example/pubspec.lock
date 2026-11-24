@@ -62,13 +62,34 @@ packages:
     description: flutter
     source: sdk
     version: "0.0.0"
-  flutter_ad_plugin:
+  flutter_ad_admob:
     dependency: "direct main"
     description:
-      path: ".."
+      path: "../packages/flutter_ad_admob"
       relative: true
     source: path
-    version: "0.1.1"
+    version: "0.2.0"
+  flutter_ad_core:
+    dependency: "direct main"
+    description:
+      path: "../packages/flutter_ad_core"
+      relative: true
+    source: path
+    version: "0.2.0"
+  flutter_ad_max:
+    dependency: "direct main"
+    description:
+      path: "../packages/flutter_ad_max"
+      relative: true
+    source: path
+    version: "0.2.0"
+  flutter_ad_topon:
+    dependency: "direct main"
+    description:
+      path: "../packages/flutter_ad_topon"
+      relative: true
+    source: path
+    version: "0.2.0"
   flutter_lints:
     dependency: "direct dev"
     description:

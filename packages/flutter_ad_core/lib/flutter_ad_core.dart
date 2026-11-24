@@ -8,6 +8,7 @@ export 'ad_plugin.dart' show AdPlugin;
 export 'models.dart'
     show
         AdSource,
+        AdType,
         AdInitializationState,
         AdInitializationStatus,
         AdEvent,

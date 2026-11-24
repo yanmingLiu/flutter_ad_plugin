@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.0 - 2026-11-24
+
+- Breaking: 仅支持 `packages/` 下的分包接入。迁移方式见 README。
+- 示例和回归测试改用分包，移除仓库根目录的聚合包与重复实现。
+- Core 公开导出 `AdType`，双 Native 达到整组数量后才进入缓存。
+- 修复 AdMob 激励回调提前清空和 MAX 同广告位并发请求覆盖。
+- TopOn 从缓存广告读取加载估值与广告网络，开屏关闭与全屏事件归因按实际回包处理。
+
 ## 0.1.1
 
 - feat: 在广告事件 `AdEvent` 中增加 `estimatedRevenue` 预估收益字段，并在 `income` 时输出。

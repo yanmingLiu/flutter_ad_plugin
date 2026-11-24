@@ -1,7 +1,7 @@
 # flutter_ad_plugin_example
 
 Example app for verifying the AdMob, AppLovin MAX, and TopOn integrations in
-the iOS Simulator.
+the iOS Simulator. The app depends on the packages in `../packages/`.
 
 ## iOS Simulator
 

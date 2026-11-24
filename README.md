@@ -1,8 +1,8 @@
 # flutter_ad_plugin
 
-一个由 JSON 配置驱动的 Flutter 广告编排插件。插件负责 AdMob 广告的加载、缓存、瀑布流、全屏展示策略、冷却控制、事件归因和资源释放；业务配置、Native UI、页面布局和埋点平台由宿主应用负责。
+一组由 JSON 配置驱动的 Flutter 广告包，支持 AdMob、AppLovin MAX 和 TopOn。Core 负责广告的加载、缓存、瀑布流、全屏展示策略、冷却控制、事件归因和资源释放；业务配置、Native UI、页面布局和埋点平台由宿主应用负责。
 
-当前版本：`0.1.0`
+当前分包版本：`0.2.0`
 
 Dart SDK：`^3.10.0`
 
@@ -28,7 +28,6 @@ MAX Flutter SDK：`applovin_max ^4.6.4`
 - 实现 `AdEventReporter` 并接入业务埋点平台。
 - 监听前后台生命周期并决定冷启动、热启动展示时机。
 - 在 Android/iOS 注册 Native Factory 和实现原生 Native UI。
-- 注入全屏 Native 的 Flutter 展示界面。
 - 决定普通 Native、双 Native 和 Banner 在页面中的布局。
 
 插件不会自动刷新 Native 或 Banner。Banner 是否自动刷新由 AdMob 后台配置决定；Native 如需刷新，由业务方重新调用加载接口。
@@ -43,10 +42,9 @@ flowchart LR
     Reporter[AdEventReporter<br/>非 EventBus]
     BusinessBus[业务 EventBus<br/>可选]
     Policy[PlacementPolicy]
-    NativePresenter[FullscreenNativePresenter]
   end
 
-  subgraph Plugin[flutter_ad_plugin]
+  subgraph Plugin[flutter_ad_core]
     API[AdPlugin]
     Loader[AdLoaderService]
     Presenter[AdPresenter]
@@ -54,7 +52,7 @@ flowchart LR
     Cache[AdCacheService]
     Registry[AdAdapterRegistry]
     Mapper[AdEventMapper]
-    Widgets[AdWidgetFactory]
+    Widgets[AdPlugin.nativeWidget / bannerWidget]
   end
 
   subgraph Platform[广告平台层]
@@ -74,7 +72,6 @@ flowchart LR
   Presenter -->|直接读写内存| Cache
   Presenter -->|异步补载调用| Loader
   Presenter -->|source + type 查询| Registry
-  Presenter -->|注入函数 + Future| NativePresenter
   Registry -->|持有实例引用| Adapters
   Adapters -->|google_mobile_ads API| SDK
   Adapters -->|onCallback 函数回调| Mapper
@@ -93,7 +90,7 @@ flowchart LR
 | `AdCacheService` | 按 placement/cacheId 保存广告及事件归因 |
 | `AdAdapterRegistry` | 按 `source + type` 查找平台 Adapter |
 | `AdEventMapper` | 将 SDK 原始回调转换为统一 `AdEvent` |
-| `AdWidgetFactory` | 提供单个 Native/Banner 的薄 Widget 渲染桥 |
+| `AdPlugin.nativeWidget()` / `bannerWidget()` | 由对应适配器构建广告 Widget |
 
 ### 层间通信方式
 
@@ -106,7 +103,6 @@ flowchart LR
 | Adapter -> Loader/Presenter | `AdLoadResult` / `AdShowResult` Future，加 `onCallback` 生命周期回调 | 否 |
 | Loader/Presenter -> `AdEventMapper` | 同步转换 `AdRawCallback -> AdEvent` | 否 |
 | Loader/Presenter -> `AdEventReporter` | 调用宿主注入的 `Future<void> report(AdEvent)` | 否 |
-| Presenter -> 全屏 Native UI | 调用宿主注入的 `FullscreenNativePresenter` 函数并等待 Future | 否 |
 
 当前架构刻意不使用全局 EventBus。广告事件由当前 `AdPlugin` 实例沿显式回调链路上报，避免跨实例串事件、隐式订阅生命周期和未注销监听造成的泄漏。宿主如果已经有 EventBus，可以在自己的 `AdEventReporter.report()` 中把 `AdEvent` 发布到业务 EventBus；插件不直接依赖具体 EventBus 实现。
 
@@ -172,7 +168,7 @@ flowchart TB
   subgraph PluginSide[插件负责]
     NativeAdapter[AdmobNativeAdapter]
     FactoryId[Factory ID 约定]
-    FlutterBridge[AdWidgetFactory.nativeWidget]
+    FlutterBridge[AdPlugin.nativeWidget]
     PresenterContract[FullscreenNativePresenter 契约]
   end
 
@@ -197,9 +193,9 @@ flowchart TB
 
 本仓库采用解耦子包架构，宿主项目可**按需引入**所需广告平台（例如只接 AdMob + MAX 时，无需打包 TopOn 及其庞大原生 SDK）：
 
-### 推荐：按需接入（只接 AdMob + MAX）
+### 按需接入（以 AdMob + MAX 为例）
 
-> **提示**：`flutter_ad_admob` 和 `flutter_ad_max` 会自动间接依赖并导出 `flutter_ad_core`，宿主工程通常**无需重复声明** `flutter_ad_core`，直接引入需要的平台即可：
+> **提示**：`flutter_ad_admob` 和 `flutter_ad_max` 会自动间接依赖并导出 `flutter_ad_core`，宿主工程可只声明需要的平台包。若直接 import Core 或使用 Core 内部类型，请显式声明 `flutter_ad_core`，并让同一应用里的所有分包使用同一 Git tag 或 commit：
 
 ```yaml
 dependencies:
@@ -208,34 +204,38 @@ dependencies:
     git:
       url: https://github.com/yanmingLiu/flutter_ad_plugin.git
       path: packages/flutter_ad_admob
-      ref: main
+      ref: v0.2.0
 
   # AppLovin MAX 适配器（自动包含 flutter_ad_core 与 applovin_max）
   flutter_ad_max:
     git:
       url: https://github.com/yanmingLiu/flutter_ad_plugin.git
       path: packages/flutter_ad_max
-      ref: main
+      ref: v0.2.0
+
+  # 直接 import Core 时取消注释：
+  # flutter_ad_core:
+  #   git:
+  #     url: https://github.com/yanmingLiu/flutter_ad_plugin.git
+  #     path: packages/flutter_ad_core
+  #     ref: v0.2.0
 
   # 如需 TopOn (secmtp_sdk)，按需取消注释：
   # flutter_ad_topon:
   #   git:
   #     url: https://github.com/yanmingLiu/flutter_ad_plugin.git
   #     path: packages/flutter_ad_topon
-  #     ref: main
+  #     ref: v0.2.0
 ```
 
-> **注意**：如果宿主工程确实需要显式声明 `flutter_ad_core`，请使用具体的 Git Commit Hash 作为 `ref`（例如 `ref: 0d12e2cacc...`），避免 Flutter pub 解析器对同一个仓库多包的 `ref: main` 产生版本歧义冲突。
+TopOn 的 `AdUnitConfig.options` 使用 `sceneID` 传场景 ID，SDK 加载参数放进 `extraMap`。Banner 尺寸用 `ATCommon.getAdSizeKey()` 和 `ATBannerManager.createLoadBannerAdSize()` 设置。原生广告的尺寸与自适应高度分别用 `ATCommon.getAdSizeKey()` 和 `ATNativeManager.isAdaptiveHeight()` 设置。已使用 `scene_id`、`sceneId` 或 `extra_map` 的配置需要改用对应的新字段，顶层尺寸及自适应参数需要移入 `extraMap`。
 
-### 完整引入（兼容旧版全量包）
+### 从根包迁移
 
-```yaml
-dependencies:
-  flutter_ad_plugin:
-    git:
-      url: https://github.com/yanmingLiu/flutter_ad_plugin.git
-      ref: main
-```
+移除旧的 `flutter_ad_plugin` 依赖，为使用到的广告平台声明上面的分包依赖。
+`AdPlugin` 和公共类型可从已安装的适配器入口导入，也可从显式依赖的
+`package:flutter_ad_core/flutter_ad_core.dart` 导入。各平台类从自己的包导入。
+
 
 ---
 
@@ -298,29 +298,25 @@ end
 
 ## 快速接入
 
-下面示例假设宿主已经实现并注册 Native Factory，并从 Example 复制了 `FullscreenNativeAdDialog`：
+以下使用 AdMob 分包。加载 AdMob 原生广告前，宿主需要注册对应的 Native Factory。
 
 ```dart
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:flutter_ad_plugin/flutter_ad_plugin.dart';
-
-import 'fullscreen_native_ad_dialog.dart';
+import 'package:flutter_ad_admob/flutter_ad_admob.dart';
 
 late final AdPlugin adPlugin;
 
 Future<void> initializeAds() async {
   adPlugin = AdPlugin(
-    config: AdPluginConfig(
-      configRepository: DefaultAdConfigRepository(localConfig: adConfigJson),
-      eventReporter: MyAdEventReporter(),
-      fullscreenNativePresenter: FullscreenNativeAdDialog.show,
-      onAdNotReady: (event) {
-        // 宿主按自己的 UI 体系提示用户。
-      },
-      verboseLogging: true,
-    ),
+    config: adConfigJson,
+    platforms: [AdmobPlatform()],
+    onEvent: (event) => analytics.report(event),
+    onAdNotReady: (event) {
+      // 宿主按自己的 UI 体系提示用户。
+    },
+    verboseLogging: true,
   );
 
   await adPlugin.init();
@@ -462,36 +458,9 @@ final adConfigJson = <String, dynamic>{
 
 ## 初始化与生命周期
 
-```dart
-final adPlugin = AdPlugin(
-  config: AdPluginConfig(
-    configRepository: MyConfigRepository(),
-    eventReporter: MyAdEventReporter(),
-    placementPolicies: buildPlacementPolicies(),
-    fullscreenNativePresenter: FullscreenNativeAdDialog.show,
-    nativeAdCloseClickPercent: 0,
-    verboseLogging: false,
-    enableHealthMetrics: true,
-  ),
-);
-
-await adPlugin.init();
-```
-
-`AdPluginConfig`：
-
-| 字段 | 必填 | 说明 |
-|---|---|---|
-| `configRepository` | 是 | 提供并缓存 `AdConfig` |
-| `eventReporter` | 是 | 接收完整广告生命周期事件 |
-| `placementPolicies` | 否 | 覆盖指定广告位的展示策略 |
-| `onAdNotReady` | 否 | 无缓存且策略允许提示时回调宿主 |
-| `fullscreenNativePresenter` | 否 | 宿主提供的全屏 Native Flutter UI；使用全屏 Native 时必须设置 |
-| `nativeAdCloseClickPercent` | 否 | 透传给宿主 Presenter 的关闭交互参数，默认 `0` |
-| `verboseLogging` | 否 | 是否输出完整诊断日志 |
-| `enableHealthMetrics` | 否 | 是否创建当前插件实例的内存指标收集器 |
-| `adapters` | 否 | 测试或扩展场景覆盖默认 Adapter 列表 |
-| `sdkInitializers` | 否 | 测试或扩展场景覆盖默认 SDK 初始化器 |
+`AdPlugin` 接收初始 JSON 配置 `config` 和需要初始化的 `platforms`。
+需要远程更新时，通过 `configLoader` 提供配置加载函数。
+通过 `onEvent` 接收广告事件，通过 `onAdNotReady` 接收无广告提示。
 
 `init()` 的行为：
 
@@ -508,7 +477,6 @@ await adPlugin.dispose();
 
 `dispose()` 会取消加载、释放所有缓存广告并清理展示状态。加载取消后晚到的 SDK 广告也会被释放。
 
-启用指标后可以通过 `adPlugin.healthMetrics` 获取当前实例的收集器。指标只保存在内存中，不跨进程持久化；当前引擎不会自动写入该收集器，需要业务方按自己的统计链路调用其 `record...` 方法。
 
 ## API
 
@@ -715,32 +683,6 @@ class MainActivity : FlutterActivity() {
 }
 ```
 
-### 全屏 Native Presenter
-
-```dart
-AdPluginConfig(
-  configRepository: repository,
-  eventReporter: reporter,
-  fullscreenNativePresenter: FullscreenNativeAdDialog.show,
-)
-```
-
-Presenter 签名：
-
-```dart
-Future<bool> show({
-  required BuildContext context,
-  required PlacementType placement,
-  required String eventName,
-  required Object ad,
-  required NativeAdClickTracker? clickTracker,
-  required int closePassThroughPercent,
-  required VoidCallback onClosed,
-});
-```
-
-返回值表示是否成功创建并展示界面。Presenter 的 Future 应在界面关闭后完成。关闭时应调用 `onClosed`；即使业务实现遗漏，插件也会在成功 Future 返回时执行幂等清理。
-
 ### 普通 Native 与多场景缓存
 
 ```dart
@@ -759,7 +701,7 @@ final ad = adPlugin.getNativeAd(
 );
 
 if (ad != null) {
-  final widget = adPlugin.widgetFactory.nativeWidget(ad, height: 280);
+  final widget = adPlugin.nativeWidget(ad, height: 280);
 }
 
 adPlugin.disposeNativeAd(home, cacheId: 'home_feed');
@@ -798,7 +740,7 @@ final ad = adPlugin.getBannerAd(
 );
 
 if (ad != null) {
-  final widget = adPlugin.widgetFactory.bannerWidget(ad);
+  final widget = adPlugin.bannerWidget(ad);
 }
 
 adPlugin.disposeBannerAd(placement);
@@ -911,16 +853,18 @@ flutter pub get
 flutter run
 ```
 
-Example 展示冷启动预加载、自动 `show(open)`、单次全屏展示、`showSequence()`、三个独立 `home` 缓存、双 Native、Banner、双端 Native Factory 和宿主全屏 Native 弹窗。
+Example 展示冷启动预加载、自动 `show(open)`、单次全屏展示、`showSequence()`、三个独立 `home` 缓存、双 Native、Banner和双端 Native Factory。
 
 验证命令：
 
 ```bash
-dart analyze lib test example/lib example/test
-flutter test
+for package in flutter_ad_core flutter_ad_admob flutter_ad_max flutter_ad_topon; do
+  (cd "packages/$package" && flutter pub get && flutter analyze && flutter test) || exit 1
+done
 
 cd example
-flutter test
+flutter pub get
+flutter analyze
 flutter build apk --debug
 flutter build ios --debug --simulator --no-codesign
 ```
